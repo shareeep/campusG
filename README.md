@@ -33,7 +33,7 @@ The application implements three main saga patterns:
 - PostgreSQL (if running services locally)
 - Kafka (if running services locally)
 
-### Setup Instructions
+### Docker Compose Setup Instructions
 
 1. Clone the repository:
    ```
@@ -58,6 +58,72 @@ The application implements three main saga patterns:
    ```
 
 4. Access the frontend at `http://localhost:3000`
+
+## Deploying with Kubernetes
+
+### Prerequisites
+
+- Docker Desktop with Kubernetes enabled
+- kubectl command-line tool (comes with Docker Desktop)
+
+### Enabling Kubernetes in Docker Desktop
+
+1. Open Docker Desktop
+2. Go to Settings/Preferences
+3. Select "Kubernetes" in the left sidebar
+4. Check "Enable Kubernetes"
+5. Click "Apply & Restart"
+6. Wait for Kubernetes to start (may take a few minutes)
+
+### Deploying CampusG to Kubernetes
+
+1. Build the Docker images:
+   ```
+   cd kubernetes/setup
+   ./build-images.sh
+   ```
+
+2. Deploy the application:
+   ```
+   kubectl apply -f kubernetes/infrastructure/namespace.yaml
+   kubectl apply -f kubernetes/infrastructure/postgres/
+   kubectl apply -f kubernetes/infrastructure/kafka/
+   kubectl apply -f kubernetes/services/
+   kubectl apply -f kubernetes/frontend/
+   ```
+   
+   Or use the setup script:
+   ```
+   cd kubernetes/setup
+   ./minikube-setup.sh
+   ```
+
+3. Add entry to hosts file for local development:
+   - Windows: Edit `C:\Windows\System32\drivers\etc\hosts`
+   - macOS/Linux: Edit `/etc/hosts`
+   
+   Add: `127.0.0.1 campusg.local`
+
+4. Access the application at http://campusg.local
+
+### Checking Deployment Status
+
+```
+# View all resources in the campusg namespace
+kubectl get all -n campusg
+
+# Check pod status
+kubectl get pods -n campusg
+
+# View logs for a specific pod
+kubectl logs <pod-name> -n campusg -f
+```
+
+### Stopping the Kubernetes Deployment
+
+```
+kubectl delete namespace campusg
+```
 
 ## Running Services Individually
 
@@ -122,6 +188,7 @@ The application implements three main saga patterns:
 
 ### Infrastructure
 - **Containerization**: Docker & Docker Compose
+- **Orchestration**: Kubernetes
 - **Database**: PostgreSQL
 
 ## Directory Structure
@@ -137,6 +204,12 @@ campusG/
 │   └── notification-service/  # Notification service (TypeScript)
 ├── frontend/                  # Next.js frontend
 ├── kafka/                     # Kafka configuration
+├── kubernetes/                # Kubernetes configuration files
+│   ├── infrastructure/        # Infrastructure resources (Postgres, Kafka)
+│   ├── services/              # Service deployments
+│   ├── frontend/              # Frontend deployment
+│   ├── setup/                 # Setup and deployment scripts
+│   └── KUBERNETES.md          # Detailed Kubernetes documentation
 └── scripts/                   # Setup and utility scripts
 ```
 
