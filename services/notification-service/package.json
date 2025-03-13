@@ -23,6 +23,7 @@
     "joi": "^17.9.1",
     "kafkajs": "^2.2.4",
     "nodemailer": "^6.9.1",
+    "notification-service": "file:",
     "socket.io": "^4.6.1"
   },
   "devDependencies": {

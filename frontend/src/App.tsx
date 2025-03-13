@@ -2,7 +2,7 @@ import { ClerkProvider } from '@clerk/clerk-react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { AppRoutes } from '@/routes';
 
-const CLERK_PUBLISHABLE_KEY = 'your_clerk_publishable_key';
+const CLERK_PUBLISHABLE_KEY = 'pk_test_aW1tb3J0YWwtYmVkYnVnLTc2LmNsZXJrLmFjY291bnRzLmRldiQ';
 
 function App() {
   return (
