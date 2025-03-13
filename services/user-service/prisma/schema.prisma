@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  firstName      String?
+  lastName       String?
+  role           UserRole @default(CUSTOMER)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  paymentDetails Json?
+  preferences    Json?
+  
+  // Virtual fields - not stored in DB, but used for relationships
+  // These would be queried from other services
+  // pastOrders   Order[]
+}
+
+enum UserRole {
+  CUSTOMER
+  RUNNER
+  ADMIN
+}

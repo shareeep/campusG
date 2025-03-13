@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Order {
+  id               String       @id @default(uuid())
+  custId           String      
+  runnerId         String?      // Null until a runner accepts the order
+  orderDescription String
+  foodFee          Decimal      @db.Decimal(10, 2)
+  deliveryFee      Decimal      @db.Decimal(10, 2)
+  deliveryLocation String
+  paymentStatus    PaymentStatus @default(PENDING)
+  orderStatus      OrderStatus   @default(CREATED)
+  startTime        DateTime      @default(now())
+  endTime          DateTime?     // Null until order is completed
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  REFUNDED
+  FAILED
+}
+
+enum OrderStatus {
+  CREATED
+  PENDING_PAYMENT
+  PAYMENT_AUTHORIZED
+  READY_FOR_PICKUP
+  ACCEPTED
+  COLLECTED
+  ON_THE_WAY
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  TIMED_OUT
+}
