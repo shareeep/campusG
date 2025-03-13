@@ -6,14 +6,14 @@ CampusG is a microservices-based food delivery application designed for campus e
 
 The application follows a microservices architecture with the following components:
 
-- **User Service**: Manages user accounts, authentication, and user data
-- **Order Service**: Handles order creation and lifecycle management
-- **Payment Service**: Processes payments via Stripe integration
-- **Escrow Service**: Manages fund holding and release
-- **Scheduler Service**: Handles time-based events and order timeouts
-- **Notification Service**: Sends notifications to users about order status changes
+- **User Service**: Manages user accounts, authentication, and user data (TypeScript/Node.js)
+- **Order Service**: Handles order creation and lifecycle management (Python/Flask)
+- **Payment Service**: Processes payments via Stripe integration (TypeScript/Node.js)
+- **Escrow Service**: Manages fund holding and release (TypeScript/Node.js)
+- **Scheduler Service**: Handles time-based events and order timeouts (TypeScript/Node.js)
+- **Notification Service**: Sends notifications to users about order status changes (TypeScript/Node.js)
 
-Communication between services is handled through both HTTP APIs and Kafka message queue.
+Communication between services is handled through both HTTP APIs and Kafka message broker.
 
 ## Key Workflows
 
@@ -28,7 +28,8 @@ The application implements three main saga patterns:
 ### Prerequisites
 
 - Docker and Docker Compose
-- Node.js (v16+) and npm
+- Node.js (v16+) and npm (for TypeScript services and frontend)
+- Python 3.11+ and pip (for Order Service)
 - PostgreSQL (if running services locally)
 - Kafka (if running services locally)
 
@@ -46,37 +47,102 @@ The application implements three main saga patterns:
    ```
    Edit the `.env` file to include your Stripe API keys and other configuration.
 
-3. Start the services using Docker Compose:
+3. Start all services using Docker Compose (recommended):
    ```
    docker-compose up
+   ```
+   
+   Or start specific services:
+   ```
+   docker-compose up frontend order-service payment-service
    ```
 
 4. Access the frontend at `http://localhost:3000`
 
-## Development
+## Running Services Individually
 
-Each microservice can be developed and run independently. See the README in each service directory for specific instructions.
+### Running TypeScript Services Locally (user-service, payment-service, etc.)
+
+1. Install dependencies:
+   ```
+   cd services/user-service
+   npm install
+   ```
+
+2. Set up environment variables or use defaults from service config
+
+3. Start the service:
+   ```
+   npm run dev
+   ```
+
+### Running Order Service Locally (Python/Flask)
+
+1. Install dependencies:
+   ```
+   cd services/order_service
+   pip install -r requirements.txt
+   ```
+
+2. Set environment variables or use defaults from `app/config/config.py`
+
+3. Run the service:
+   ```
+   python run.py
+   ```
+
+### Running the Frontend Locally
+
+1. Install dependencies:
+   ```
+   cd frontend
+   npm install
+   ```
+
+2. Start the development server:
+   ```
+   npm run dev
+   ```
+
+3. Access the frontend at `http://localhost:3000`
 
 ## Tech Stack
 
-- **Backend**: Node.js, TypeScript, Express, PostgreSQL, Prisma ORM
-- **Frontend**: Next.js, React, TypeScript, Tailwind CSS, shadcn components
+### Backend
+- **TypeScript Services**: Node.js, TypeScript, Express, PostgreSQL, Prisma ORM
+- **Order Service**: Python 3.11, Flask, SQLAlchemy, PostgreSQL
+- **Message Broker**: Kafka
 - **Authentication**: Clerk
 - **Payment Processing**: Stripe
-- **Message Broker**: Kafka
-- **Containerization**: Docker
+
+### Frontend
+- **Framework**: Next.js, React
+- **Styling**: Tailwind CSS, shadcn components
+- **Language**: TypeScript
+
+### Infrastructure
+- **Containerization**: Docker & Docker Compose
+- **Database**: PostgreSQL
 
 ## Directory Structure
 
 ```
 campusG/
 ├── services/                  # Microservices directory
-│   ├── user-service/          # User management service
-│   ├── order-service/         # Order management service
-│   ├── payment-service/       # Payment processing service
-│   ├── escrow-service/        # Escrow service
-│   ├── scheduler-service/     # Scheduler service
-│   └── notification-service/  # Notification service
+│   ├── user-service/          # User management service (TypeScript)
+│   ├── order_service/         # Order management service (Python/Flask)
+│   ├── payment-service/       # Payment processing service (TypeScript)
+│   ├── escrow-service/        # Escrow service (TypeScript)
+│   ├── scheduler-service/     # Scheduler service (TypeScript)
+│   └── notification-service/  # Notification service (TypeScript)
 ├── frontend/                  # Next.js frontend
 ├── kafka/                     # Kafka configuration
 └── scripts/                   # Setup and utility scripts
+```
+
+## Development Notes
+
+- The order service uses Flask and is found in `services/order_service/` (note the underscore)
+- Other services use TypeScript and follow a similar structure
+- Service-specific documentation can be found in the README.md file within each service directory
+- Frontend uses Next.js App Router and includes both customer and runner interfaces

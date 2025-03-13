@@ -13,12 +13,12 @@ The project has been structured with 6 microservices, a message broker (Kafka), 
 
 ## Core Services
 
-1. **User Service**: Manages user accounts, authentication, and profiles
-2. **Order Service**: Handles order creation and lifecycle management
-3. **Payment Service**: Processes payments via Stripe
-4. **Escrow Service**: Manages fund holding and release
-5. **Scheduler Service**: Handles time-based events and order timeouts
-6. **Notification Service**: Sends notifications to users
+1. **User Service**: Manages user accounts, authentication, and profiles (TypeScript/Node.js)
+2. **Order Service**: Handles order creation and lifecycle management (Python/Flask)
+3. **Payment Service**: Processes payments via Stripe (TypeScript/Node.js)
+4. **Escrow Service**: Manages fund holding and release (TypeScript/Node.js)
+5. **Scheduler Service**: Handles time-based events and order timeouts (TypeScript/Node.js)
+6. **Notification Service**: Sends notifications to users (TypeScript/Node.js)
 
 ## Project Root Files
 
@@ -33,9 +33,9 @@ The project has been structured with 6 microservices, a message broker (Kafka), 
 
 ## Microservice Structure
 
-All microservices follow the same basic structure:
+### TypeScript Services (user-service, payment-service, etc.)
 
-### Configuration Files
+#### Configuration Files
 
 - **package.json**: Node.js dependencies and scripts
   - Contains all necessary dependencies for TypeScript, Express, Prisma, Kafka
@@ -50,16 +50,16 @@ All microservices follow the same basic structure:
   - Sets up Prisma client generation
   - Configures appropriate ports and commands
 
-### Database Structure
+#### Database Structure
 
 - **prisma/schema.prisma**: Database schema for each service
   - Defines the data models for the specific service
   - Includes relationships between models
   - Sets up enums for status fields
 
-### Source Code Structure
+#### Source Code Structure
 
-Each service has the following source code structure:
+Each TypeScript service has the following source code structure:
 
 - **src/config/**: Configuration files
   - Contains environment variables, service URLs, and Kafka configuration
@@ -87,9 +87,34 @@ Each service has the following source code structure:
 - **src/utils/**: Utility functions
   - Helper functions, formatters, and validators
 
-- **src/sagas/**: Saga implementations
+- **src/sagas/**: Saga implementations (in order service)
   - Orchestrates complex workflows across multiple services
-  - Example: `createOrderSaga.ts` in the order service
+
+### Flask Service (order_service)
+
+The Order Service is implemented in Python using Flask:
+
+#### Configuration Files
+
+- **requirements.txt**: Python dependencies
+  - Contains dependencies for Flask, SQLAlchemy, confluent-kafka, etc.
+
+- **Dockerfile**: Container configuration
+  - Set up for Python and Flask application
+  - Configures Gunicorn as the production server
+
+#### Directory Structure
+
+- **app/**: Main application code
+  - **__init__.py**: Flask application factory
+  - **api/**: API endpoints and route definitions
+  - **config/**: Configuration settings
+  - **models/**: SQLAlchemy models
+  - **sagas/**: Saga pattern implementations
+  - **services/**: Business logic and service integrations
+  - **utils/**: Utility functions
+
+- **run.py**: Application entry point
 
 ## Message Broker Configuration
 
@@ -140,7 +165,7 @@ The frontend is built with Next.js, React, TypeScript, and Tailwind CSS.
 
 This structure provides the foundation for your application. Here's what you need to implement:
 
-### For Each Microservice:
+### For TypeScript Microservices:
 
 1. **Create Missing Files**:
    - Create `index.ts` in each service as the entry point (like in the user service)
@@ -151,17 +176,18 @@ This structure provides the foundation for your application. Here's what you nee
 
 2. **Complete Business Logic**:
    - Implement user authentication with Clerk
-   - Create order processing logic
    - Implement payment processing with Stripe
    - Build escrow logic for fund holding
    - Create scheduling logic for timeouts
    - Implement notification delivery
 
-3. **Saga Implementation**:
-   - Complete the Create Order Saga implementation
-   - Implement Accept Order Saga based on the Create Order pattern
-   - Implement Complete Order Saga
-   - Add proper error handling and compensating transactions
+### For Flask Order Service:
+
+1. **Complete the Implementation**:
+   - The service has already been set up with the essential structure
+   - Complete the API endpoints for order management
+   - Implement the Accept Order and Complete Order sagas
+   - Add additional error handling and validation
 
 ### For the Frontend:
 
@@ -172,7 +198,7 @@ This structure provides the foundation for your application. Here's what you nee
    - User profile and settings
 
 2. **Implement API Clients**:
-   - Create service clients to communicate with backend APIs
+   - Create service clients to communicate with backend services
    - Implement real-time updates with WebSockets
 
 3. **Build UI Components**:
@@ -184,7 +210,7 @@ This structure provides the foundation for your application. Here's what you nee
 
 Some files have been created as examples to guide your implementation:
 
-1. **User Service**:
+1. **User Service** (TypeScript):
    - `src/config/index.ts`: Shows how to set up configuration
    - `src/controllers/userController.ts`: Demonstrates controller implementation
    - `src/middleware/authMiddleware.ts`: Shows Clerk authentication
@@ -192,21 +218,24 @@ Some files have been created as examples to guide your implementation:
    - `src/services/kafkaService.ts`: Shows Kafka integration
    - `src/index.ts`: Demonstrates the main application entry point
 
-2. **Order Service**:
-   - `src/sagas/createOrderSaga.ts`: Demonstrates the Saga pattern for order creation
+2. **Order Service** (Flask):
+   - `app/sagas/create_order_saga.py`: Demonstrates the Saga pattern implementation
+   - `app/api/routes.py`: Shows API endpoint implementation
+   - `app/models/models.py`: Shows SQLAlchemy model definitions
+   - `app/services/kafka_service.py`: Shows Kafka integration in Python
 
 These files are just examples and should be modified to fit your specific requirements.
 
 ## Saga Pattern Implementation
 
-The `createOrderSaga.ts` file demonstrates how to implement the Saga pattern:
+The saga pattern is implemented in both TypeScript and Python, demonstrating how to:
 
-1. It orchestrates a complex workflow across multiple services
-2. It includes compensating transactions for error handling
-3. It publishes events to Kafka for other services to consume
-4. It coordinates the order creation process from validation to notification
+1. Orchestrate a complex workflow across multiple services
+2. Include compensating transactions for error handling
+3. Publish events to Kafka for other services to consume
+4. Coordinate the order creation process from validation to notification
 
-This pattern should be followed for the other sagas:
+Follow this pattern for the other sagas:
 
 - **Accept Order Saga**: Coordinates runner acceptance, order status update, and notifications
 - **Complete Order Saga**: Coordinates delivery confirmation, payment release, and order completion
