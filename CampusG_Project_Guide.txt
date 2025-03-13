@@ -1,0 +1,263 @@
+# CampusG Project Structure Guide
+
+This document explains the project structure that has been set up for the CampusG food delivery application.
+
+## Project Overview
+
+CampusG is a microservices-based food delivery application designed for campus environments. The application follows three key sagas:
+1. Create Order Saga
+2. Accept Order Saga
+3. Complete Order Saga
+
+The project has been structured with 6 microservices, a message broker (Kafka), and a Next.js frontend.
+
+## Core Services
+
+1. **User Service**: Manages user accounts, authentication, and profiles (TypeScript/Node.js)
+2. **Order Service**: Handles order creation and lifecycle management (Python/Flask)
+3. **Payment Service**: Processes payments via Stripe (TypeScript/Node.js)
+4. **Escrow Service**: Manages fund holding and release (TypeScript/Node.js)
+5. **Scheduler Service**: Handles time-based events and order timeouts (TypeScript/Node.js)
+6. **Notification Service**: Sends notifications to users (TypeScript/Node.js)
+
+## Project Root Files
+
+- **README.md**: Project documentation with setup instructions
+- **docker-compose.yml**: Orchestrates all services (databases, Kafka, microservices, frontend)
+  - Configures PostgreSQL, Kafka, and Zookeeper
+  - Sets up each microservice with appropriate environment variables
+  - Links the services together and exposes necessary ports
+
+- **scripts/create-multiple-db.sh**: Helper script for creating multiple PostgreSQL databases
+  - Used by the docker-compose.yml to initialize a separate database for each service
+
+## Microservice Structure
+
+### TypeScript Services (user-service, payment-service, etc.)
+
+#### Configuration Files
+
+- **package.json**: Node.js dependencies and scripts
+  - Contains all necessary dependencies for TypeScript, Express, Prisma, Kafka
+  - Defines scripts for building, running, and developing the service
+
+- **tsconfig.json**: TypeScript configuration
+  - Configured for Node.js backend development
+  - Includes paths configuration for module importing
+
+- **Dockerfile**: Container configuration
+  - Multi-stage build process for efficient Docker images
+  - Sets up Prisma client generation
+  - Configures appropriate ports and commands
+
+#### Database Structure
+
+- **prisma/schema.prisma**: Database schema for each service
+  - Defines the data models for the specific service
+  - Includes relationships between models
+  - Sets up enums for status fields
+
+#### Source Code Structure
+
+Each TypeScript service has the following source code structure:
+
+- **src/config/**: Configuration files
+  - Contains environment variables, service URLs, and Kafka configuration
+  - Example: `index.ts` in the user service
+
+- **src/controllers/**: Request handlers
+  - Implements the business logic for API endpoints
+  - Example: `userController.ts` in the user service
+
+- **src/middleware/**: Express middleware
+  - Contains authentication, validation, and error handling middleware
+  - Example: `authMiddleware.ts` in the user service for Clerk integration
+
+- **src/models/**: Additional data models
+  - TypeScript interfaces and types beyond the Prisma schema
+
+- **src/routes/**: API routes
+  - Defines the API endpoints and connects them to controllers
+  - Example: `userRoutes.ts` in the user service
+
+- **src/services/**: Business logic and external services
+  - Implements core business logic and external API communication
+  - Example: `kafkaService.ts` in the user service
+
+- **src/utils/**: Utility functions
+  - Helper functions, formatters, and validators
+
+- **src/sagas/**: Saga implementations (in order service)
+  - Orchestrates complex workflows across multiple services
+
+### Flask Service (order_service)
+
+The Order Service is implemented in Python using Flask:
+
+#### Configuration Files
+
+- **requirements.txt**: Python dependencies
+  - Contains dependencies for Flask, SQLAlchemy, confluent-kafka, etc.
+
+- **Dockerfile**: Container configuration
+  - Set up for Python and Flask application
+  - Configures Gunicorn as the production server
+
+#### Directory Structure
+
+- **app/**: Main application code
+  - **__init__.py**: Flask application factory
+  - **api/**: API endpoints and route definitions
+  - **config/**: Configuration settings
+  - **models/**: SQLAlchemy models
+  - **sagas/**: Saga pattern implementations
+  - **services/**: Business logic and service integrations
+  - **utils/**: Utility functions
+
+- **run.py**: Application entry point
+
+## Message Broker Configuration
+
+- **kafka/config/topics.json**: Defines Kafka topics for inter-service communication
+  - Lists all topics with partitions and retention policies
+  - Topics include: user-events, order-events, payment-events, escrow-events, notification-events, scheduler-events
+
+## Frontend Structure
+
+The frontend is built with Next.js, React, TypeScript, and Tailwind CSS.
+
+### Configuration Files
+
+- **package.json**: Frontend dependencies
+  - Includes Next.js, React, Tailwind CSS, and Clerk for authentication
+
+- **tsconfig.json**: TypeScript configuration for Next.js
+
+- **tailwind.config.js**: Tailwind CSS theme configuration
+  - Defines colors, fonts, and other design elements
+
+- **next.config.js**: Next.js configuration
+  - Includes API rewrites to microservices
+
+### Source Code Structure
+
+- **src/app/**: Next.js App Router
+  - **layout.tsx**: Main application layout with Clerk authentication
+  - **globals.css**: Global styles with Tailwind directives
+  - **page.tsx**: Landing page with customer/runner options
+
+- **src/components/**: UI components
+  - **/ui/**: Reusable UI components
+  - **/forms/**: Form components
+  - **/orders/**: Order-related components
+  - **/layout/**: Layout components
+
+- **src/lib/**: Shared utilities
+  - Helper functions, formatters, and validation
+
+- **src/services/**: API clients
+  - Functions to interact with backend services
+
+- **src/types/**: TypeScript types
+  - TypeScript interfaces and types for the frontend
+
+## What Needs To Be Implemented
+
+This structure provides the foundation for your application. Here's what you need to implement:
+
+### For TypeScript Microservices:
+
+1. **Create Missing Files**:
+   - Create `index.ts` in each service as the entry point (like in the user service)
+   - Create config files with environment variables and service URLs
+   - Implement controllers for API endpoints
+   - Create route definitions to expose APIs
+   - Implement Kafka message handlers in services
+
+2. **Complete Business Logic**:
+   - Implement user authentication with Clerk
+   - Implement payment processing with Stripe
+   - Build escrow logic for fund holding
+   - Create scheduling logic for timeouts
+   - Implement notification delivery
+
+### For Flask Order Service:
+
+1. **Complete the Implementation**:
+   - The service has already been set up with the essential structure
+   - Complete the API endpoints for order management
+   - Implement the Accept Order and Complete Order sagas
+   - Add additional error handling and validation
+
+### For the Frontend:
+
+1. **Create Pages**:
+   - Customer dashboard
+   - Runner dashboard
+   - Order creation and tracking
+   - User profile and settings
+
+2. **Implement API Clients**:
+   - Create service clients to communicate with backend services
+   - Implement real-time updates with WebSockets
+
+3. **Build UI Components**:
+   - Create forms for order creation
+   - Build order tracking components
+   - Implement notification displays
+
+## Special Notes on Example Files
+
+Some files have been created as examples to guide your implementation:
+
+1. **User Service** (TypeScript):
+   - `src/config/index.ts`: Shows how to set up configuration
+   - `src/controllers/userController.ts`: Demonstrates controller implementation
+   - `src/middleware/authMiddleware.ts`: Shows Clerk authentication
+   - `src/routes/userRoutes.ts`: Demonstrates route definition
+   - `src/services/kafkaService.ts`: Shows Kafka integration
+   - `src/index.ts`: Demonstrates the main application entry point
+
+2. **Order Service** (Flask):
+   - `app/sagas/create_order_saga.py`: Demonstrates the Saga pattern implementation
+   - `app/api/routes.py`: Shows API endpoint implementation
+   - `app/models/models.py`: Shows SQLAlchemy model definitions
+   - `app/services/kafka_service.py`: Shows Kafka integration in Python
+
+These files are just examples and should be modified to fit your specific requirements.
+
+## Saga Pattern Implementation
+
+The saga pattern is implemented in both TypeScript and Python, demonstrating how to:
+
+1. Orchestrate a complex workflow across multiple services
+2. Include compensating transactions for error handling
+3. Publish events to Kafka for other services to consume
+4. Coordinate the order creation process from validation to notification
+
+Follow this pattern for the other sagas:
+
+- **Accept Order Saga**: Coordinates runner acceptance, order status update, and notifications
+- **Complete Order Saga**: Coordinates delivery confirmation, payment release, and order completion
+
+## Docker Setup
+
+The `docker-compose.yml` file orchestrates the entire application:
+
+1. It sets up PostgreSQL with multiple databases
+2. It configures Kafka and Zookeeper for message brokering
+3. It builds and runs each microservice with appropriate environment variables
+4. It links services together with the correct networking
+
+To run the application, simply use `docker-compose up` after implementing the required functionality.
+
+## Next Steps
+
+1. Review the existing files to understand the structure
+2. Implement the missing files for each service
+3. Build out the business logic for your specific requirements
+4. Test the sagas to ensure proper workflow
+5. Develop the frontend user interface
+6. Test the end-to-end application
+
+This structure provides a solid foundation for your CampusG application. You can modify it as needed to fit your specific requirements.

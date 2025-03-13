@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Payment {
+  id               String          @id @default(uuid())
+  orderId          String          @unique
+  custId           String
+  paymentIntentId  String?         // Stripe Payment Intent ID
+  amount           Decimal         @db.Decimal(10, 2)
+  currency         String          @default("SGD")
+  paymentStatus    PaymentStatus   @default(PENDING)
+  paymentMethod    Json?           // Details about payment method
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  metadata         Json?           // Additional payment metadata
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED      // Payment has been authorized but not captured
+  CAPTURED        // Payment has been captured (completed)
+  REFUNDED        // Payment has been refunded
+  FAILED          // Payment has failed
+  CANCELLED       // Payment has been cancelled
+}
