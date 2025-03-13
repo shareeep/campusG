@@ -9,7 +9,7 @@ export function Header() {
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         <Link to="/" className="flex items-center space-x-2">
           <ShoppingBag className="h-6 w-6 text-blue-600" />
-          <span className="text-xl font-bold">CampusEats</span>
+          <span className="text-xl font-bold">CampusG</span>
         </Link>
         
         <nav className="flex items-center space-x-6">
