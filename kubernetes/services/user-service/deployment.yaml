@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: campusg
+  labels:
+    app: user-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+      - name: user-service
+        image: ${DOCKER_REGISTRY:-localhost}/campusg/user-service:${TAG:-latest}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: user-service-config
+              key: db_user
+        - name: DB_PASSWORD
+          valueFrom:
+            configMapKeyRef:
+              name: user-service-config
+              key: db_password
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: user-service-config
+              key: db_host
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: user-service-config
+              key: db_port
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: user-service-config
+              key: db_name
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: user-service-config
+              key: kafka_bootstrap_servers
+        - name: FLASK_APP
+          value: "run.py"
+        - name: FLASK_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: user-service-config
+              key: flask_env
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: user-service-secrets
+              key: secret_key
+              optional: true
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: user-service-secrets
+              key: jwt_secret_key
+              optional: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox
+        command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
+      - name: wait-for-kafka
+        image: busybox
+        command: ['sh', '-c', 'until nc -z kafka 9092; do echo waiting for kafka; sleep 2; done;']
