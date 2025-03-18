@@ -1,6 +1,15 @@
 from app import db
 from datetime import datetime
-from sqlalchemy.dialects.postgresql import JSON
+import enum
+import uuid
+from sqlalchemy.dialects.postgresql import JSONB
+
+class EventType(enum.Enum):
+    """Event type enum"""
+    ORDER_TIMEOUT = "ORDER_TIMEOUT"
+    PAYMENT_AUTHORIZATION_EXPIRY = "PAYMENT_AUTHORIZATION_EXPIRY"
+    DELIVERY_REMINDER = "DELIVERY_REMINDER"
+    ESCROW_TIMEOUT = "ESCROW_TIMEOUT"
 
 class ScheduledEvent(db.Model):
     """
@@ -12,29 +21,27 @@ class ScheduledEvent(db.Model):
     """
     __tablename__ = 'scheduled_events'
     
-    id = db.Column(db.String(36), primary_key=True)
-    event_type = db.Column(db.String(50), nullable=False, index=True)
+    scheduler_id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    event_type = db.Column(db.Enum(EventType), nullable=False, index=True)
     entity_id = db.Column(db.String(36), nullable=False, index=True)
     scheduled_time = db.Column(db.DateTime, nullable=False, index=True)
-    payload = db.Column(JSON, nullable=True)
-    status = db.Column(db.String(20), nullable=False, default='PENDING', index=True)
+    processed = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    payload = db.Column(JSONB, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-    triggered_at = db.Column(db.DateTime, nullable=True)
     
     def __repr__(self):
-        return f"<ScheduledEvent {self.id}: {self.event_type} for {self.entity_id} at {self.scheduled_time}>"
+        return f"<ScheduledEvent {self.scheduler_id}: {self.event_type.name} for {self.entity_id}>"
         
     def to_dict(self):
         """Convert the model to a dictionary"""
         return {
-            'id': self.id,
-            'eventType': self.event_type,
+            'schedulerId': self.scheduler_id,
+            'eventType': self.event_type.name,
             'entityId': self.entity_id,
             'scheduledTime': self.scheduled_time.isoformat(),
+            'processed': self.processed,
             'payload': self.payload,
-            'status': self.status,
             'createdAt': self.created_at.isoformat(),
-            'updatedAt': self.updated_at.isoformat(),
-            'triggeredAt': self.triggered_at.isoformat() if self.triggered_at else None
+            'updatedAt': self.updated_at.isoformat()
         }

@@ -1,0 +1,41 @@
+from app import db
+from datetime import datetime
+import uuid
+from sqlalchemy.dialects.postgresql import JSONB
+
+class User(db.Model):
+    """Model for users (both customers and runners)"""
+    __tablename__ = 'users'
+
+    user_id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    first_name = db.Column(db.String(100), nullable=False)
+    last_name = db.Column(db.String(100), nullable=False)
+    phone_number = db.Column(db.String(20), nullable=True)
+    payment_details = db.Column(JSONB, nullable=True)
+    user_rating = db.Column(db.Float, nullable=False, default=5.0, index=True)
+    runner_rating = db.Column(db.Float, nullable=False, default=5.0, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<User {self.email}>"
+
+    def to_dict(self, include_payment_details=False):
+        """Convert the model to a dictionary"""
+        data = {
+            'userId': self.user_id,
+            'email': self.email,
+            'firstName': self.first_name,
+            'lastName': self.last_name,
+            'phoneNumber': self.phone_number,
+            'userRating': float(self.user_rating),
+            'runnerRating': float(self.runner_rating),
+            'createdAt': self.created_at.isoformat(),
+            'updatedAt': self.updated_at.isoformat()
+        }
+        
+        if include_payment_details and self.payment_details:
+            data['paymentDetails'] = self.payment_details
+            
+        return data
