@@ -2,6 +2,7 @@ from app import db
 from datetime import datetime
 import uuid
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Numeric
 
 class User(db.Model):
     """Model for users (both customers and runners)"""
@@ -12,9 +13,9 @@ class User(db.Model):
     first_name = db.Column(db.String(100), nullable=False)
     last_name = db.Column(db.String(100), nullable=False)
     phone_number = db.Column(db.String(20), nullable=True)
-    payment_details = db.Column(JSONB, nullable=True)
-    user_rating = db.Column(db.Float, nullable=False, default=5.0, index=True)
-    runner_rating = db.Column(db.Float, nullable=False, default=5.0, index=True)
+    user_stripe_card = db.Column(JSONB, nullable=True)
+    customer_rating = db.Column(Numeric, nullable=False, default=5.0, index=True)
+    runner_rating = db.Column(Numeric, nullable=False, default=5.0, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -29,13 +30,13 @@ class User(db.Model):
             'firstName': self.first_name,
             'lastName': self.last_name,
             'phoneNumber': self.phone_number,
-            'userRating': float(self.user_rating),
+            'customerRating': float(self.customer_rating),
             'runnerRating': float(self.runner_rating),
             'createdAt': self.created_at.isoformat(),
             'updatedAt': self.updated_at.isoformat()
         }
         
-        if include_payment_details and self.payment_details:
-            data['paymentDetails'] = self.payment_details
+        if include_payment_details and self.user_stripe_card:
+            data['userStripeCard'] = self.user_stripe_card
             
         return data
