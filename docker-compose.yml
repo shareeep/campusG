@@ -254,20 +254,20 @@ services:
     ports:
       - "3007:3000"
 
-  # Frontend
-  frontend:
-    build:
-      context: ./frontend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - user-service
-      - order-service
-      - payment-service
-      - escrow-service
-      - scheduler-service
-      - notification-service
-      - timer-service
+  # # Frontend
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - user-service
+  #     - order-service
+  #     - payment-service
+  #     - escrow-service
+  #     - scheduler-service
+  #     - notification-service
+  #     - timer-service
 
 volumes:
   user_db_data:
