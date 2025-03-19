@@ -1,27 +1,29 @@
 from flask import Blueprint, request, jsonify, current_app
 import uuid
+from decimal import Decimal
 from datetime import datetime
-import requests
-from app.models.models import EscrowTransaction, TransactionStatus, TransactionType
+from app.models.models import Escrow, EscrowStatus
 from app import db
+from app.services.kafka_service import kafka_client
 
 api = Blueprint('api', __name__)
 
 @api.route('/escrow/hold', methods=['POST'])
-async def hold_funds():
+def hold_funds():
     """
-    Hold funds in escrow
+    Hold funds in escrow for an order
     
     Request body should contain:
     {
         "orderId": "order-123",
         "customerId": "customer-456",
+        "runnerId": "runner-789" (optional, may be null at this stage),
         "amount": 29.99,
         "foodFee": 24.99,
         "deliveryFee": 5.00
     }
     
-    This endpoint will place the specified amount in escrow for the order.
+    This endpoint creates an escrow record and marks funds as held.
     """
     try:
         data = request.json
@@ -29,37 +31,37 @@ async def hold_funds():
         if not data:
             return jsonify({'success': False, 'message': 'No data provided'}), 400
             
-        order_id = data.get('orderId')
-        customer_id = data.get('customerId')
-        amount = data.get('amount')
-        food_fee = data.get('foodFee')
-        delivery_fee = data.get('deliveryFee')
+        # Validate required fields
+        required_fields = ['orderId', 'customerId', 'amount', 'foodFee', 'deliveryFee']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'success': False, 'message': f"Missing required field: {field}"}), 400
         
-        if not order_id or not customer_id or amount is None:
-            return jsonify({'success': False, 'message': 'Missing required fields'}), 400
-            
+        order_id = data['orderId']
+        customer_id = data['customerId']
+        runner_id = data.get('runnerId')  # May be null at this stage
+        amount = Decimal(str(data['amount']))
+        food_fee = Decimal(str(data['foodFee']))
+        delivery_fee = Decimal(str(data['deliveryFee']))
+        
         # Check if escrow already exists for this order
-        existing_escrow = EscrowTransaction.query.filter_by(
-            order_id=order_id,
-            transaction_type=TransactionType.HOLD
-        ).first()
-        
+        existing_escrow = Escrow.query.filter_by(order_id=order_id).first()
         if existing_escrow:
             return jsonify({
                 'success': False, 
-                'message': 'Escrow already exists for this order'
+                'message': f'Escrow already exists for order {order_id} with status {existing_escrow.status.name}'
             }), 400
-            
-        # Create a new escrow transaction
-        escrow = EscrowTransaction(
-            id=str(uuid.uuid4()),
+        
+        # Create new escrow record
+        escrow = Escrow(
+            escrow_id=str(uuid.uuid4()),
             order_id=order_id,
             customer_id=customer_id,
+            runner_id=runner_id,
             amount=amount,
-            food_fee=food_fee or 0,
-            delivery_fee=delivery_fee or 0,
-            transaction_type=TransactionType.HOLD,
-            status=TransactionStatus.PENDING,
+            food_fee=food_fee,
+            delivery_fee=delivery_fee,
+            status=EscrowStatus.PENDING,
             created_at=datetime.utcnow()
         )
         
@@ -67,36 +69,50 @@ async def hold_funds():
         db.session.add(escrow)
         db.session.commit()
         
+        # In a real implementation, this would interact with a payment system
+        # to hold the funds. For now, we'll simulate success.
+        
         # Update escrow status to HELD
-        escrow.status = TransactionStatus.HELD
+        escrow.status = EscrowStatus.HELD
         escrow.updated_at = datetime.utcnow()
         db.session.commit()
         
-        current_app.logger.info(f"Funds held in escrow for order {order_id}")
+        # Publish escrow event to Kafka
+        kafka_client.publish('escrow-events', {
+            'type': 'FUNDS_HELD',
+            'payload': {
+                'escrowId': escrow.escrow_id,
+                'orderId': order_id,
+                'customerId': customer_id,
+                'amount': float(amount)
+            }
+        })
+        
+        current_app.logger.info(f"Funds held for order {order_id}: ${amount}")
         
         return jsonify({
             'success': True,
-            'message': 'Funds held in escrow successfully',
-            'escrowId': escrow.id
-        }), 200
+            'message': 'Funds held successfully',
+            'escrow': escrow.to_dict()
+        }), 201
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error holding funds in escrow: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to hold funds in escrow: {str(e)}"}), 500
+        current_app.logger.error(f"Error holding funds: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to hold funds: {str(e)}"}), 500
 
 @api.route('/escrow/release', methods=['POST'])
-async def release_funds():
+def release_funds():
     """
-    Release funds from escrow
+    Release funds from escrow to the runner
     
     Request body should contain:
     {
         "orderId": "order-123",
-        "recipientType": "RESTAURANT" | "RUNNER"
+        "runnerId": "runner-789" (required for release)
     }
     
-    This endpoint will release the appropriate portion of the funds from escrow.
+    This endpoint releases funds from escrow to the runner upon delivery completion.
     """
     try:
         data = request.json
@@ -105,114 +121,70 @@ async def release_funds():
             return jsonify({'success': False, 'message': 'No data provided'}), 400
             
         order_id = data.get('orderId')
-        recipient_type = data.get('recipientType')
+        runner_id = data.get('runnerId')
         
-        if not order_id or not recipient_type:
-            return jsonify({'success': False, 'message': 'Missing required fields'}), 400
-            
-        if recipient_type not in ['RESTAURANT', 'RUNNER']:
-            return jsonify({'success': False, 'message': 'Invalid recipient type'}), 400
-            
-        # Find the escrow transaction for this order
-        escrow = EscrowTransaction.query.filter_by(
-            order_id=order_id,
-            transaction_type=TransactionType.HOLD,
-            status=TransactionStatus.HELD
-        ).first()
+        if not order_id or not runner_id:
+            return jsonify({'success': False, 'message': 'Missing orderId or runnerId'}), 400
+        
+        # Find the escrow for this order
+        escrow = Escrow.query.filter_by(order_id=order_id).first()
         
         if not escrow:
-            return jsonify({'success': False, 'message': 'Escrow not found or not in HELD status'}), 404
+            return jsonify({'success': False, 'message': 'Escrow not found for order'}), 404
             
-        # Determine the amount to release
-        release_amount = escrow.food_fee if recipient_type == 'RESTAURANT' else escrow.delivery_fee
+        if escrow.status != EscrowStatus.HELD:
+            return jsonify({
+                'success': False, 
+                'message': f'Cannot release funds in status: {escrow.status.name}'
+            }), 400
+            
+        # Update runner ID if it was null before
+        if not escrow.runner_id:
+            escrow.runner_id = runner_id
         
-        # Create a release transaction
-        release = EscrowTransaction(
-            id=str(uuid.uuid4()),
-            order_id=order_id,
-            customer_id=escrow.customer_id,
-            amount=release_amount,
-            food_fee=escrow.food_fee if recipient_type == 'RESTAURANT' else 0,
-            delivery_fee=escrow.delivery_fee if recipient_type == 'RUNNER' else 0,
-            transaction_type=TransactionType.RELEASE,
-            status=TransactionStatus.PENDING,
-            recipient_type=recipient_type,
-            created_at=datetime.utcnow()
-        )
+        # In a real implementation, this would release funds to the runner through a payment system
         
-        # Save to database
-        db.session.add(release)
+        # Update escrow status to RELEASED
+        escrow.status = EscrowStatus.RELEASED
+        escrow.updated_at = datetime.utcnow()
         db.session.commit()
         
-        # Make payment service call to capture funds
-        try:
-            # In a real implementation, make a call to payment service to capture funds
-            # For now, we'll just simulate it
-            
-            # Update release status to RELEASED
-            release.status = TransactionStatus.RELEASED
-            release.updated_at = datetime.utcnow()
-            db.session.commit()
-            
-            # If both restaurant and runner have been paid, mark escrow as COMPLETED
-            if recipient_type == 'RUNNER':
-                restaurant_paid = EscrowTransaction.query.filter_by(
-                    order_id=order_id,
-                    transaction_type=TransactionType.RELEASE,
-                    recipient_type='RESTAURANT',
-                    status=TransactionStatus.RELEASED
-                ).first()
-                
-                if restaurant_paid:
-                    escrow.status = TransactionStatus.COMPLETED
-                    escrow.updated_at = datetime.utcnow()
-                    db.session.commit()
-            
-            elif recipient_type == 'RESTAURANT':
-                runner_paid = EscrowTransaction.query.filter_by(
-                    order_id=order_id,
-                    transaction_type=TransactionType.RELEASE,
-                    recipient_type='RUNNER',
-                    status=TransactionStatus.RELEASED
-                ).first()
-                
-                if runner_paid:
-                    escrow.status = TransactionStatus.COMPLETED
-                    escrow.updated_at = datetime.utcnow()
-                    db.session.commit()
-            
-            current_app.logger.info(f"Funds released from escrow for order {order_id} to {recipient_type}")
-            
-            return jsonify({
-                'success': True,
-                'message': f'Funds released from escrow successfully to {recipient_type}',
-                'releaseId': release.id
-            }), 200
-            
-        except Exception as e:
-            release.status = TransactionStatus.FAILED
-            release.updated_at = datetime.utcnow()
-            db.session.commit()
-            
-            current_app.logger.error(f"Error processing payment capture: {str(e)}")
-            return jsonify({'success': False, 'message': f"Failed to capture payment: {str(e)}"}), 500
-            
+        # Publish escrow event to Kafka
+        kafka_client.publish('escrow-events', {
+            'type': 'FUNDS_RELEASED',
+            'payload': {
+                'escrowId': escrow.escrow_id,
+                'orderId': order_id,
+                'customerId': escrow.customer_id,
+                'runnerId': runner_id,
+                'amount': float(escrow.amount)
+            }
+        })
+        
+        current_app.logger.info(f"Funds released for order {order_id} to runner {runner_id}: ${escrow.amount}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Funds released successfully',
+            'escrow': escrow.to_dict()
+        }), 200
+        
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error releasing funds from escrow: {str(e)}")
+        current_app.logger.error(f"Error releasing funds: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to release funds: {str(e)}"}), 500
 
-@api.route('/escrow/cancel', methods=['POST'])
-async def cancel_escrow():
+@api.route('/escrow/refund', methods=['POST'])
+def refund_funds():
     """
-    Cancel escrow hold
+    Refund funds from escrow back to the customer
     
     Request body should contain:
     {
         "orderId": "order-123"
     }
     
-    This endpoint will cancel an escrow hold for a given order.
+    This endpoint refunds funds back to the customer, used in order cancellations.
     """
     try:
         data = request.json
@@ -223,60 +195,59 @@ async def cancel_escrow():
         order_id = data.get('orderId')
         
         if not order_id:
-            return jsonify({'success': False, 'message': 'Missing order ID'}), 400
-            
-        # Find the escrow transaction for this order
-        escrow = EscrowTransaction.query.filter_by(
-            order_id=order_id,
-            transaction_type=TransactionType.HOLD
-        ).first()
+            return jsonify({'success': False, 'message': 'Missing orderId'}), 400
+        
+        # Find the escrow for this order
+        escrow = Escrow.query.filter_by(order_id=order_id).first()
         
         if not escrow:
-            return jsonify({'success': False, 'message': 'Escrow not found'}), 404
+            return jsonify({'success': False, 'message': 'Escrow not found for order'}), 404
             
-        if escrow.status not in [TransactionStatus.PENDING, TransactionStatus.HELD]:
-            return jsonify({'success': False, 'message': f"Escrow cannot be cancelled in status: {escrow.status.value}"}), 400
-            
-        # Update escrow status to CANCELLED
-        escrow.status = TransactionStatus.CANCELLED
+        if escrow.status != EscrowStatus.HELD:
+            return jsonify({
+                'success': False, 
+                'message': f'Cannot refund funds in status: {escrow.status.name}'
+            }), 400
+        
+        # In a real implementation, this would refund funds to the customer through a payment system
+        
+        # Update escrow status to REFUNDED
+        escrow.status = EscrowStatus.REFUNDED
         escrow.updated_at = datetime.utcnow()
         db.session.commit()
         
-        # Make payment service call to release authorization
-        try:
-            response = requests.post(
-                f"{current_app.config['PAYMENT_SERVICE_URL']}/api/payments/release",
-                json={'orderId': order_id}
-            )
-            
-            if response.status_code != 200:
-                current_app.logger.error(f"Failed to release payment: {response.text}")
-                # We continue despite payment release failure
-            
-            current_app.logger.info(f"Escrow cancelled for order {order_id}")
-            
-            return jsonify({
-                'success': True,
-                'message': 'Escrow cancelled successfully'
-            }), 200
-            
-        except Exception as e:
-            current_app.logger.error(f"Error releasing payment: {str(e)}")
-            return jsonify({'success': True, 'message': 'Escrow cancelled but payment release failed'}), 200
-            
+        # Publish escrow event to Kafka
+        kafka_client.publish('escrow-events', {
+            'type': 'FUNDS_REFUNDED',
+            'payload': {
+                'escrowId': escrow.escrow_id,
+                'orderId': order_id,
+                'customerId': escrow.customer_id,
+                'amount': float(escrow.amount)
+            }
+        })
+        
+        current_app.logger.info(f"Funds refunded for order {order_id} to customer {escrow.customer_id}: ${escrow.amount}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Funds refunded successfully',
+            'escrow': escrow.to_dict()
+        }), 200
+        
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error cancelling escrow: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to cancel escrow: {str(e)}"}), 500
+        current_app.logger.error(f"Error refunding funds: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to refund funds: {str(e)}"}), 500
 
 @api.route('/escrow/<escrow_id>', methods=['GET'])
-async def get_escrow(escrow_id):
-    """Get a specific escrow transaction by ID"""
+def get_escrow(escrow_id):
+    """Get a specific escrow by ID"""
     try:
-        escrow = EscrowTransaction.query.get(escrow_id)
+        escrow = Escrow.query.get(escrow_id)
         
         if not escrow:
-            return jsonify({'success': False, 'message': 'Escrow transaction not found'}), 404
+            return jsonify({'success': False, 'message': 'Escrow not found'}), 404
             
         return jsonify({
             'success': True,
@@ -287,35 +258,20 @@ async def get_escrow(escrow_id):
         current_app.logger.error(f"Error getting escrow {escrow_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to get escrow: {str(e)}"}), 500
 
-@api.route('/escrow', methods=['GET'])
-async def get_escrow_transactions():
-    """Get escrow transactions with optional filtering by order"""
+@api.route('/escrow/order/<order_id>', methods=['GET'])
+def get_escrow_by_order(order_id):
+    """Get the escrow for a specific order"""
     try:
-        # Query parameters
-        order_id = request.args.get('orderId')
-        status = request.args.get('status')
-        transaction_type = request.args.get('type')
+        escrow = Escrow.query.filter_by(order_id=order_id).first()
         
-        # Build query
-        query = EscrowTransaction.query
-        
-        if order_id:
-            query = query.filter_by(order_id=order_id)
+        if not escrow:
+            return jsonify({'success': False, 'message': 'Escrow not found for order'}), 404
             
-        if status:
-            query = query.filter_by(status=status)
-            
-        if transaction_type:
-            query = query.filter_by(transaction_type=transaction_type)
-            
-        # Get transactions
-        transactions = query.all()
-        
         return jsonify({
             'success': True,
-            'transactions': [transaction.to_dict() for transaction in transactions]
+            'escrow': escrow.to_dict()
         }), 200
         
     except Exception as e:
-        current_app.logger.error(f"Error getting escrow transactions: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to get transactions: {str(e)}"}), 500
+        current_app.logger.error(f"Error getting escrow for order {order_id}: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to get escrow: {str(e)}"}), 500
