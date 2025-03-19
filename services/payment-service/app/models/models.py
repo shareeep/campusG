@@ -22,8 +22,8 @@ class Payment(db.Model):
     status = db.Column(db.Enum(PaymentStatus), nullable=False, default=PaymentStatus.INITIATING, index=True)
     customer_stripe_card = db.Column(db.String(255), nullable=True)
     stripe_payment_id = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC), onupdate=datetime.now(datetime.UTC))
 
     def __repr__(self):
         return f"<Payment {self.payment_id} for order {self.order_id}>"

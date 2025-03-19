@@ -11,7 +11,7 @@ class Timer(db.Model):
     runner_id = db.Column(db.String(36), nullable=False, index=True)
     order_id = db.Column(db.String(36), nullable=False, index=True)
     runner_accepted = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
 
     def __repr__(self):
         return f"<Timer {self.timer_id} for order {self.order_id}>"

@@ -25,8 +25,8 @@ class Order(db.Model):
     delivery_fee = db.Column(db.Numeric(5, 2), nullable=False)
     delivery_location = db.Column(db.String(255), nullable=False)
     order_status = db.Column(db.Enum(OrderStatus), nullable=False, default=OrderStatus.CREATED, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC), onupdate=datetime.now(datetime.UTC))
     completed_at = db.Column(db.DateTime, nullable=True)
 
     def __repr__(self):

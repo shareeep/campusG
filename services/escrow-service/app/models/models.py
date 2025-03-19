@@ -28,8 +28,8 @@ class EscrowTransaction(db.Model):
     food_fee = db.Column(db.Numeric(10, 2), nullable=False)
     delivery_fee = db.Column(db.Numeric(10, 2), nullable=False)
     status = db.Column(db.Enum(EscrowStatus), nullable=False, default=EscrowStatus.PENDING, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC), onupdate=datetime.now(datetime.UTC))
     
     def __repr__(self):
         return f"<EscrowTransaction {self.escrow_id} for order {self.order_id}>"

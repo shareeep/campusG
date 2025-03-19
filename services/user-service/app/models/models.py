@@ -16,8 +16,8 @@ class User(db.Model):
     user_stripe_card = db.Column(JSONB, nullable=True)
     customer_rating = db.Column(Numeric, nullable=False, default=5.0, index=True)
     runner_rating = db.Column(Numeric, nullable=False, default=5.0, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC), onupdate=datetime.now(datetime.UTC))
 
     def __repr__(self):
         return f"<User {self.email}>"
