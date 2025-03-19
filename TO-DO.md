@@ -1,36 +1,25 @@
 # CampusG Microservices - TO-DO List
 
-This document provides a clear, step-by-step guide for completing the **Create Order Saga** implementation in our food delivery application. Tasks are organized by microservice and include difficulty ratings (1=easy, 5=hard).
+This document provides a clear, step-by-step guide for completing the implementation in our food delivery application. Tasks are organized by microservice and include difficulty ratings (1=easy, 5=hard).
 
 ## What We've Already Built
 
-✅ Core Create Order Saga orchestrator
+✅ Core Create Order Saga orchestrator (partially implemented)
 ✅ Payment Service API endpoints
-✅ Escrow Service API endpoints
+✅ Escrow Service API endpoints 
 ✅ Scheduler Service API endpoints
 ✅ Database models for tracking orders, payments, escrow transactions, and scheduled events
+✅ User Service API endpoints
+✅ Timer Service API endpoints
+✅ Notification Service API endpoints
+✅ Updated database models for all services
+✅ Kafka integration for all services
 
 ## What Still Needs To Be Completed
 
-## 1. User Service Microservice
+## 1. Order Service Microservice - Core Configuration
 
-### 1.1 Create User API Endpoint (Difficulty: 2)
-
-- **File to create:** `services/user-service/app/api/user_routes.py`
-- **What it does:** Creates an endpoint that returns user information, including payment methods
-- **Why it's needed:** The Create Order Saga needs to check if a user exists and has valid payment methods
-- **Example functionality:**
-  ```python
-  @api.route('/users/<user_id>', methods=['GET'])
-  async def get_user(user_id):
-      # This endpoint should:
-      # 1. Check if user exists
-      # 2. Return user data with payment details
-  ```
-
-## 2. Order Service Microservice
-
-### 2.1 Update Configuration (Difficulty: 1)
+### 1.1 Update Configuration (Difficulty: 1)
 
 - **File to modify:** `services/order_service/app/config/config.py`
 - **What to add:** Service URLs for all the microservices
@@ -45,27 +34,93 @@ This document provides a clear, step-by-step guide for completing the **Create O
   NOTIFICATION_SERVICE_URL = os.environ.get('NOTIFICATION_SERVICE_URL', 'http://notification-service:3000')
   ```
 
-### 2.2 Create Integration Tests (Difficulty: 4)
+## 2. Saga Orchestrators Implementation
 
-- **File to create:** `services/order_service/tests/sagas/test_create_order_saga.py`
-- **What it does:** Tests that the entire saga workflow executes correctly
-- **Why it's needed:** To verify the saga works end-to-end and handles errors properly
-- **Key test cases to include:**
-  - Success path: Order created successfully
-  - Error paths: User not found, payment fails, etc.
+Our system uses three primary saga orchestrators to manage complex workflows. Only the Create Order Saga has been partially implemented.
+
+### 2.1 Complete Create Order Saga (Difficulty: 3)
+
+- **File to modify:** `services/order_service/app/sagas/create_order_saga.py`
+- **What it does:** Manages the entire order creation process including payment, escrow, and timeout scheduling
+- **Why it's needed:** To ensure the complete order creation flow works properly with compensation transactions
+- **Key additions needed:**
+  - Improve error handling with detailed rollback mechanisms
+  - Add additional logging and event publishing
+  - Ensure proper interaction with all services
+
+### 2.2 Implement Accept Order Saga (Difficulty: 4)
+
+- **File to create:** `services/order_service/app/sagas/accept_order_saga.py`
+- **What it does:** Manages the process of a runner accepting an order
+- **Why it's needed:** To coordinate runner assignment, notifications, and timer handling
+- **Key functionality:**
+  - Verify order availability and bind runner
+  - Update order status to "Accepted"
+  - Send notifications to customer
+  - Stop request timer
+  - Handle rollback if runner cancels acceptance
+- **Example implementation:**
+  ```python
+  class AcceptOrderSaga:
+      """
+      Accept Order Saga
+      
+      This saga orchestrates the process of a runner accepting an order:
+      1. Verify order is available
+      2. Bind runner to order
+      3. Update order status to "Accepted"
+      4. Stop request timer
+      5. Send notification to customer
+      """
+      
+      async def execute(self, order_id, runner_id):
+          # Implementation here
+  ```
+
+### 2.3 Implement Complete Order Saga (Difficulty: 5)
+
+- **File to create:** `services/order_service/app/sagas/complete_order_saga.py`
+- **What it does:** Manages the entire delivery process from runner arrival at store to delivery completion
+- **Why it's needed:** To coordinate the multi-step delivery process and ensure proper fund release
+- **Key functionality:**
+  - Handle status transitions: on-site → purchased → collected → on-the-way → delivered → completed
+  - Verify delivery confirmation
+  - Release funds from escrow
+  - Update ratings
+  - Generate receipts and completion notifications
+- **Example implementation:**
+  ```python
+  class CompleteOrderSaga:
+      """
+      Complete Order Saga
+      
+      This saga orchestrates the delivery process:
+      1. Runner arrives at store (on-site)
+      2. Runner places order (purchased)
+      3. Runner collects order (collected)
+      4. Runner is on the way to delivery (on-the-way)
+      5. Runner completes delivery (delivered)
+      6. System releases payment (completed)
+      """
+      
+      async def execute(self, order_id, status_update):
+          # Implementation here
+  ```
 
 ## 3. Notification Service Microservice
 
 ### 3.1 Create Kafka Consumer (Difficulty: 3)
 
 - **File to create:** `services/notification-service/app/consumers/order_events_consumer.py`
-- **What it does:** Listens for events published by the Create Order Saga and sends notifications
+- **What it does:** Listens for events published by the sagas and sends notifications
 - **Why it's needed:** To notify users about order status changes
 - **Events to handle:**
   - Pending payment
   - Payment authorized
   - Escrow placed
   - Order created
+  - Order accepted
+  - Delivery updates
 - **Example structure:**
   ```python
   def handle_event(topic, event):
@@ -102,24 +157,53 @@ This document provides a clear, step-by-step guide for completing the **Create O
 
 ## 5. Testing and Integration
 
-### 5.1 End-to-End Testing (Difficulty: 5)
+### 5.1 Create Integration Tests for Create Order Saga (Difficulty: 4)
+
+- **File to create:** `services/order_service/tests/sagas/test_create_order_saga.py`
+- **What it does:** Tests that the Create Order Saga executes correctly
+- **Why it's needed:** To verify the saga works end-to-end and handles errors properly
+- **Key test cases to include:**
+  - Success path: Order created successfully
+  - Error paths: User not found, payment fails, etc.
+
+### 5.2 Create Integration Tests for Accept Order Saga (Difficulty: 4)
+
+- **File to create:** `services/order_service/tests/sagas/test_accept_order_saga.py`
+- **What it does:** Tests that the Accept Order Saga executes correctly
+- **Key test cases to include:**
+  - Success path: Runner accepts order
+  - Error path: Runner cancels acceptance
+
+### 5.3 Create Integration Tests for Complete Order Saga (Difficulty: 4)
+
+- **File to create:** `services/order_service/tests/sagas/test_complete_order_saga.py`
+- **What it does:** Tests that the Complete Order Saga executes correctly
+- **Key test cases to include:**
+  - Success path: Full delivery flow
+  - Error paths: Issues at different stages of delivery
+
+### 5.4 End-to-End Testing (Difficulty: 5)
 
 - **Files to create/modify:** Various test files
-- **What to do:** Test the complete flow from order creation to all possible outcomes
+- **What to do:** Test the complete flow from order creation to delivery completion
 - **Test scenarios:**
-  - Customer creates order → payment succeeds → order created
+  - Customer creates order → payment succeeds → order created → runner accepts → delivery completed
   - Customer creates order → payment fails → order cancelled
   - Order created → no runner accepts → timeout → order cancelled
+  - Order accepted → runner cancels → order returns to available
+  - Various delivery stage issues and resolutions
 
 ## Recommended Order of Implementation
 
 For the best results, implement these tasks in this order:
 
-1. Start with Order Service configuration (2.1) - This is simple but necessary
-2. Then implement User Service endpoint (1.1) - The saga needs this first
-3. Implement Notification Service consumer (3.1) - Start with a simple version
-4. Implement Scheduler Service worker (4.1) - This completes the workflow
-5. Finally, create integration tests (2.2, 5.1) - Verify everything works
+1. Start with Order Service configuration (1.1) - This is simple but necessary
+2. Complete the Create Order Saga (2.1) - Focus on the core workflow first
+3. Implement Accept Order Saga (2.2) - This builds on the Create Order Saga
+4. Implement Notification Service consumer (3.1) - This supports all sagas
+5. Implement Scheduler Service worker (4.1) - This handles timeouts
+6. Implement Complete Order Saga (2.3) - This is the most complex saga
+7. Create integration tests (5.1-5.4) - Verify everything works properly
 
 ## Learning Resources
 

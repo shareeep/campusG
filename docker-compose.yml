@@ -97,6 +97,22 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      
+  timer-db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: timer_db
+    volumes:
+      - timer_db_data:/var/lib/postgresql/data
+    ports:
+      - "5438:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # Kafka and Zookeeper
   zookeeper:
@@ -222,6 +238,21 @@ services:
         condition: service_started
     ports:
       - "3006:3000"
+      
+  timer-service:
+    build:
+      context: ./services/timer-service
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@timer-db:5432/timer_db
+      - KAFKA_BROKERS=kafka:29092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    depends_on:
+      timer-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    ports:
+      - "3007:3000"
 
   # Frontend
   frontend:
@@ -236,6 +267,7 @@ services:
       - escrow-service
       - scheduler-service
       - notification-service
+      - timer-service
 
 volumes:
   user_db_data:
@@ -244,3 +276,4 @@ volumes:
   escrow_db_data:
   scheduler_db_data:
   notification_db_data:
+  timer_db_data:
