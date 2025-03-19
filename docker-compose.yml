@@ -143,6 +143,9 @@ services:
   user-service:
     build:
       context: ./services/user-service
+      dockerfile: Dockerfile
+      args:
+        - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@user-db:5432/user_db
       - KAFKA_BROKERS=kafka:29092
@@ -181,6 +184,9 @@ services:
   payment-service:
     build:
       context: ./services/payment-service
+      dockerfile: Dockerfile
+      args:
+        - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@payment-db:5432/payment_db
       - KAFKA_BROKERS=kafka:29092
@@ -197,6 +203,9 @@ services:
   escrow-service:
     build:
       context: ./services/escrow-service
+      dockerfile: Dockerfile
+      args:
+        - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@escrow-db:5432/escrow_db
       - KAFKA_BROKERS=kafka:29092
@@ -228,6 +237,9 @@ services:
   notification-service:
     build:
       context: ./services/notification-service
+      dockerfile: Dockerfile
+      args:
+        - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@notification-db:5432/notification_db
       - KAFKA_BROKERS=kafka:29092
@@ -242,6 +254,9 @@ services:
   timer-service:
     build:
       context: ./services/timer-service
+      dockerfile: Dockerfile
+      args:
+        - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@timer-db:5432/timer_db
       - KAFKA_BROKERS=kafka:29092

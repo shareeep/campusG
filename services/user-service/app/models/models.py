@@ -1,5 +1,5 @@
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import Numeric
@@ -16,8 +16,8 @@ class User(db.Model):
     user_stripe_card = db.Column(JSONB, nullable=True)
     customer_rating = db.Column(Numeric, nullable=False, default=5.0, index=True)
     runner_rating = db.Column(Numeric, nullable=False, default=5.0, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC), onupdate=datetime.now(datetime.UTC))
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
     def __repr__(self):
         return f"<User {self.email}>"
