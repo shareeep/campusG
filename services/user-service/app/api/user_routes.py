@@ -278,3 +278,31 @@ def update_runner_rating(user_id):
         db.session.rollback()
         current_app.logger.error(f"Error updating runner rating for user {user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update runner rating: {str(e)}"}), 500
+
+@api.route('/list-users', methods=['GET'])
+def list_user_ids():
+    """
+    Get a list of all user IDs
+    
+    This endpoint returns all user IDs in the system.
+    Useful for testing and development purposes.
+    """
+    try:
+        # Query just the user_id column for efficiency
+        user_ids = [user.user_id for user in User.query.with_entities(User.user_id).all()]
+        
+        if not user_ids:
+            return jsonify({
+                'success': True,
+                'userIds': [],
+                'message': 'No users found in the system'
+            }), 200
+        
+        return jsonify({
+            'success': True,
+            'userIds': user_ids
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving user IDs: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to retrieve user IDs: {str(e)}"}), 500

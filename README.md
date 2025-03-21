@@ -74,6 +74,9 @@ The application implements three main saga patterns:
    # Start a specific service if it's not running
    docker-compose up -d user-service
    
+   #If you made a new enpoint and its not working e.g. in user-service
+   docker-compose build user-service && docker-compose up -d user-service
+
    # Then initialize its database
    docker exec -it campusg-user-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
    ```

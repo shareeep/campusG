@@ -150,6 +150,21 @@ This document provides a comprehensive guide to test all microservices in the Ca
   }
   ```
 
+### Get All User IDs
+- **URL**: `http://localhost:3001/api/list-users`
+- **Method**: GET
+- **Expected Response** (200 OK):
+  ```json
+  {
+    "success": true,
+    "userIds": [
+      "user-uuid-1",
+      "user-uuid-2",
+      "user-uuid-3"
+    ]
+  }
+  ```
+
 ## Order Service
 
 ### Get All Orders
