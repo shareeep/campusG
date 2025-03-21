@@ -1,10 +1,11 @@
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 import uuid
 
 class OrderStatus(enum.Enum):
     """Order status enum"""
+    PENDING = "PENDING"
     CREATED = "CREATED"
     ACCEPTED = "ACCEPTED"
     PLACED = "PLACED"
@@ -24,9 +25,9 @@ class Order(db.Model):
     food_fee = db.Column(db.Numeric(5, 2), nullable=False)
     delivery_fee = db.Column(db.Numeric(5, 2), nullable=False)
     delivery_location = db.Column(db.String(255), nullable=False)
-    order_status = db.Column(db.Enum(OrderStatus), nullable=False, default=OrderStatus.CREATED, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC), onupdate=datetime.now(datetime.UTC))
+    order_status = db.Column(db.Enum(OrderStatus), nullable=False, default=OrderStatus.PENDING, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime, nullable=True)
 
     def __repr__(self):

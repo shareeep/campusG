@@ -1,5 +1,7 @@
 # CampusG Microservices - TO-DO List
 
+> **IMPORTANT NOTICE:** Kafka-related implementation is currently ON HOLD. Focus on core service functionality first. Kafka integration will be revisited once all services are fully operational.
+
 This document provides a clear, step-by-step guide for completing the implementation in our food delivery application. Tasks are organized by microservice and include difficulty ratings (1=easy, 5=hard).
 
 ## What We've Already Built
@@ -13,7 +15,8 @@ This document provides a clear, step-by-step guide for completing the implementa
 ✅ Timer Service API endpoints
 ✅ Notification Service API endpoints
 ✅ Updated database models for all services
-✅ Kafka integration for all services
+✅ Kafka integration for all services (CURRENTLY ON HOLD - Do not modify Kafka code at this time)
+✅ Fixed asynchronous code issues in Order Service API and Saga implementation (see CHANGELOG_21_March.md)
 
 ## What Still Needs To Be Completed
 
@@ -73,7 +76,7 @@ Our system uses three primary saga orchestrators to manage complex workflows. On
       5. Send notification to customer
       """
       
-      async def execute(self, order_id, runner_id):
+      def execute(self, order_id, runner_id):
           # Implementation here
   ```
 
@@ -103,13 +106,15 @@ Our system uses three primary saga orchestrators to manage complex workflows. On
       6. System releases payment (completed)
       """
       
-      async def execute(self, order_id, status_update):
+      def execute(self, order_id, status_update):
           # Implementation here
   ```
 
 ## 3. Notification Service Microservice
 
-### 3.1 Create Kafka Consumer (Difficulty: 3)
+### 3.1 Create Kafka Consumer (Difficulty: 3) - ⚠️ POSTPONED
+
+> **ON HOLD:** This task is postponed until Kafka implementation is reactivated. For now, implement direct API calls for notifications.
 
 - **File to create:** `services/notification-service/app/consumers/order_events_consumer.py`
 - **What it does:** Listens for events published by the sagas and sends notifications
@@ -133,6 +138,15 @@ Our system uses three primary saga orchestrators to manage complex workflows. On
           # Send notification about payment authorized
       # ... etc.
   ```
+
+### 3.1.1 Temporary Alternative: Direct Notification API (Difficulty: 2)
+
+- **File to create:** `services/notification-service/app/api/notification_routes.py`
+- **What it does:** Provides direct API endpoints for sending notifications
+- **Why it's needed:** To support notifications without relying on Kafka
+- **Key endpoints to implement:**
+  - `POST /api/notifications/send` - Send a notification
+  - `GET /api/notifications/user/{user_id}` - Get notifications for a user
 
 ## 4. Scheduler Service Microservice
 
@@ -200,10 +214,12 @@ For the best results, implement these tasks in this order:
 1. Start with Order Service configuration (1.1) - This is simple but necessary
 2. Complete the Create Order Saga (2.1) - Focus on the core workflow first
 3. Implement Accept Order Saga (2.2) - This builds on the Create Order Saga
-4. Implement Notification Service consumer (3.1) - This supports all sagas
+4. Implement direct Notification Service endpoints (3.1.1) - Temporary alternative to Kafka
 5. Implement Scheduler Service worker (4.1) - This handles timeouts
 6. Implement Complete Order Saga (2.3) - This is the most complex saga
 7. Create integration tests (5.1-5.4) - Verify everything works properly
+
+> **Note:** All Kafka-related tasks are postponed. The code for Kafka integration should remain in place but not be modified or relied upon at this time.
 
 ## Learning Resources
 
@@ -219,6 +235,10 @@ For the best results, implement these tasks in this order:
 - [Flask Documentation](https://flask.palletsprojects.com/)
 - [Flask RESTful](https://flask-restful.readthedocs.io/en/latest/)
 
-### Kafka for Event-Driven Architecture
+### REST-Based Communication (Current Focus)
+- [REST API Best Practices](https://restfulapi.net/)
+- [Designing RESTful APIs](https://www.oreilly.com/library/view/restful-web-apis/9781449359713/)
+
+### Kafka for Event-Driven Architecture (For Future Reference)
 - [Confluent Kafka Python](https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html)
 - [Kafka Documentation](https://kafka.apache.org/documentation/)

@@ -4,7 +4,7 @@ import requests
 from datetime import datetime, timedelta
 from flask import current_app
 from decimal import Decimal
-from app.models.models import Order, OrderStatus, PaymentStatus
+from app.models.models import Order, OrderStatus
 from app import db
 from app.services.kafka_service import kafka_client
 
@@ -40,7 +40,7 @@ class CreateOrderSaga:
         self.order_id = None
         self.user_data = None
         
-    async def execute(self):
+    def execute(self):
         """
         Start the create order saga
         
@@ -49,68 +49,68 @@ class CreateOrderSaga:
         """
         try:
             # Step 1: Get user data from User Service
-            user_data = await self.get_user_data()
+            user_data = self.get_user_data()
             if not user_data['success']:
                 return {'success': False, 'error': user_data['error']}
             
             self.user_data = user_data.get('data', {})
                 
             # Step 2: Create order record in Order Service
-            order_created = await self.create_order_record()
+            order_created = self.create_order_record()
             if not order_created['success']:
                 return {'success': False, 'error': order_created['error']}
                 
             # Step 3: Log pending payment to Notification Service
-            await self.log_to_notification_service('PENDING_PAYMENT', {
+            self.log_to_notification_service('PENDING_PAYMENT', {
                 'orderId': self.order_id,
                 'customerId': self.customer_id,
                 'status': 'pendingPayment'
             })
                 
             # Step 4: Authorize payment via Payment Service
-            payment_authorized = await self.authorize_payment()
+            payment_authorized = self.authorize_payment()
             if not payment_authorized['success']:
                 # Compensating transaction: update order status to failed
-                await self.update_order_status(OrderStatus.CANCELLED)
+                self.update_order_status(OrderStatus.CANCELLED)
                 return {'success': False, 'error': payment_authorized['error']}
                 
             # Step 5: Log payment authorization to Notification Service
-            await self.log_to_notification_service('PAYMENT_AUTHORIZED', {
+            self.log_to_notification_service('PAYMENT_AUTHORIZED', {
                 'orderId': self.order_id,
                 'customerId': self.customer_id,
                 'amount': float(self.payment_amount)
             })
                 
             # Step 6: Hold funds in Escrow Service
-            funds_held = await self.hold_funds_in_escrow()
+            funds_held = self.hold_funds_in_escrow()
             if not funds_held['success']:
                 # Compensating transaction: release payment authorization
-                await self.release_payment_authorization()
-                await self.update_order_status(OrderStatus.CANCELLED)
+                self.release_payment_authorization()
+                self.update_order_status(OrderStatus.CANCELLED)
                 return {'success': False, 'error': funds_held['error']}
                 
             # Step 7: Log escrow placement to Notification Service
-            await self.log_to_notification_service('ESCROW_PLACED', {
+            self.log_to_notification_service('ESCROW_PLACED', {
                 'orderId': self.order_id,
                 'customerId': self.customer_id,
                 'amount': float(self.payment_amount)
             })
                 
             # Step 8: Update order status to created
-            status_updated = await self.update_order_status(OrderStatus.CREATED)
+            status_updated = self.update_order_status(OrderStatus.CREATED)
             if not status_updated['success']:
                 # This is not critical - we can still proceed but log the error
                 current_app.logger.error(f"Failed to update order status: {status_updated['error']}")
                 
             # Step 9: Log status update to Notification Service
-            await self.log_to_notification_service('ORDER_CREATED', {
+            self.log_to_notification_service('ORDER_CREATED', {
                 'orderId': self.order_id,
                 'customerId': self.customer_id,
                 'status': 'created'
             })
                 
             # Step 10: Start order timeout timer in Scheduler Service
-            timer_started = await self.start_order_timeout_timer()
+            timer_started = self.start_order_timeout_timer()
             if not timer_started['success']:
                 # This is not critical - we can still proceed but log the error
                 current_app.logger.error(f"Failed to start order timeout timer: {timer_started['error']}")
@@ -126,14 +126,14 @@ class CreateOrderSaga:
             
             # Attempt to clean up if possible
             if self.order_id:
-                await self.update_order_status(OrderStatus.CANCELLED)
+                self.update_order_status(OrderStatus.CANCELLED)
                 
             return {
                 'success': False,
                 'error': f"Unexpected error: {str(e)}"
             }
             
-    async def get_user_data(self):
+    def get_user_data(self):
         """
         Step 1: Get user data from User Service
         
@@ -170,7 +170,7 @@ class CreateOrderSaga:
                 'error': f"Failed to validate customer: {str(e)}"
             }
             
-    async def create_order_record(self):
+    def create_order_record(self):
         """
         Step 2: Create the order record in the database
         
@@ -186,15 +186,13 @@ class CreateOrderSaga:
             
             # Create a new order
             order = Order(
-                id=str(uuid.uuid4()),
+                order_id=str(uuid.uuid4()),
                 cust_id=self.customer_id,
                 order_description=json.dumps(food_items),
                 food_fee=food_fee,
                 delivery_fee=delivery_fee,
                 delivery_location=delivery_location,
-                payment_status=PaymentStatus.PENDING,
-                order_status=OrderStatus.PENDING,
-                start_time=datetime.utcnow()
+                order_status=OrderStatus.PENDING
             )
             
             # Save to database
@@ -202,13 +200,13 @@ class CreateOrderSaga:
             db.session.commit()
             
             # Store order ID
-            self.order_id = order.id
+            self.order_id = order.order_id
             
             # Publish order created event
             kafka_client.publish('order-events', {
                 'type': 'ORDER_CREATED',
                 'payload': {
-                    'orderId': order.id,
+                    'orderId': order.order_id,
                     'customerId': self.customer_id,
                     'amount': float(food_fee + delivery_fee)
                 }
@@ -223,7 +221,7 @@ class CreateOrderSaga:
                 'error': f"Failed to create order: {str(e)}"
             }
     
-    async def log_to_notification_service(self, event_type, payload):
+    def log_to_notification_service(self, event_type, payload):
         """
         Log event to Notification Service via Kafka
         
@@ -242,7 +240,7 @@ class CreateOrderSaga:
             current_app.logger.error(f"Error publishing {event_type} event: {str(e)}")
             # We continue despite notification errors
             
-    async def authorize_payment(self):
+    def authorize_payment(self):
         """
         Step 4: Authorize payment with payment service
         
@@ -273,22 +271,16 @@ class CreateOrderSaga:
                     'error': result.get('message', 'Payment authorization failed')
                 }
                 
-            # Update order payment status
-            order = Order.query.get(self.order_id)
-            if order:
-                order.payment_status = PaymentStatus.AUTHORIZED
-                db.session.commit()
-                
+            # Payment service will handle updating the payment status internally
             return {'success': True}
         except Exception as e:
-            db.session.rollback()
             current_app.logger.error(f"Error authorizing payment: {str(e)}")
             return {
                 'success': False,
                 'error': f"Failed to authorize payment: {str(e)}"
             }
             
-    async def hold_funds_in_escrow(self):
+    def hold_funds_in_escrow(self):
         """
         Step 6: Hold funds in escrow
         
@@ -334,7 +326,7 @@ class CreateOrderSaga:
                 'error': f"Failed to hold funds in escrow: {str(e)}"
             }
             
-    async def release_payment_authorization(self):
+    def release_payment_authorization(self):
         """
         Release payment authorization (compensating transaction)
         """
@@ -354,7 +346,7 @@ class CreateOrderSaga:
             return False
             # We log but don't raise as this is a compensating transaction
             
-    async def start_order_timeout_timer(self):
+    def start_order_timeout_timer(self):
         """
         Step 10: Start order timeout timer
         
@@ -401,7 +393,7 @@ class CreateOrderSaga:
                 'error': f"Error scheduling timeout: {str(e)}"
             }
             
-    async def update_order_status(self, status):
+    def update_order_status(self, status):
         """
         Update order status
         

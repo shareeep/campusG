@@ -9,7 +9,7 @@ from datetime import datetime
 api = Blueprint('api', __name__)
 
 @api.route('/orders', methods=['GET'])
-async def get_orders():
+def get_orders():
     """Get all orders"""
     try:
         page = request.args.get('page', 1, type=int)
@@ -31,7 +31,7 @@ async def get_orders():
         return jsonify({'error': 'Failed to retrieve orders'}), 500
 
 @api.route('/getOrderDetails', methods=['GET'])
-async def get_order_details():
+def get_order_details():
     """Get a specific order by ID"""
     try:
         order_id = request.args.get('orderId')
@@ -50,7 +50,7 @@ async def get_order_details():
         return jsonify({'error': 'Failed to retrieve order'}), 500
 
 @api.route('/createOrder', methods=['POST'])
-async def create_order():
+def create_order():
     """Create a new order"""
     try:
         data = request.json
@@ -66,7 +66,7 @@ async def create_order():
             
         # Create and execute the saga
         saga = CreateOrderSaga(customer_id, order_details)
-        result = await saga.execute()
+        result = saga.execute()
         
         if not result['success']:
             return jsonify({'error': result['error']}), 400
@@ -93,7 +93,7 @@ async def create_order():
         return jsonify({'error': 'Failed to create order'}), 500
 
 @api.route('/updateOrderStatus', methods=['POST'])
-async def update_order_status():
+def update_order_status():
     """Update the status of an order"""
     try:
         data = request.json
@@ -149,7 +149,7 @@ async def update_order_status():
         return jsonify({'error': 'Failed to update order status'}), 500
 
 @api.route('/verifyAndAcceptOrder', methods=['POST'])
-async def verify_and_accept_order():
+def verify_and_accept_order():
     """Verifies order availability and accepts it (runner)"""
     try:
         data = request.json
@@ -200,7 +200,7 @@ async def verify_and_accept_order():
         return jsonify({'error': 'Failed to accept order'}), 500
 
 @api.route('/cancelOrder', methods=['POST'])
-async def cancel_order():
+def cancel_order():
     """Cancel an order"""
     try:
         data = request.json
@@ -244,7 +244,7 @@ async def cancel_order():
         return jsonify({'error': 'Failed to cancel order'}), 500
 
 @api.route('/cancelAcceptance', methods=['POST'])
-async def cancel_acceptance():
+def cancel_acceptance():
     """Reverts acceptance of an order (runner cancels)"""
     try:
         data = request.json
@@ -292,7 +292,7 @@ async def cancel_acceptance():
         return jsonify({'error': 'Failed to cancel order acceptance'}), 500
 
 @api.route('/completeOrder', methods=['POST'])
-async def complete_order():
+def complete_order():
     """Complete an order (delivered and payment captured)"""
     try:
         data = request.json

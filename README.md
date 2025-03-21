@@ -80,6 +80,10 @@ The application implements three main saga patterns:
 
    Repeat the same process for other services:
    ```
+   # For order_service
+   docker-compose up -d order-service
+   docker exec -it campusg-order-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
+
    # For payment-service
    docker-compose up -d payment-service
    docker exec -it campusg-payment-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
