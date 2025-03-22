@@ -1,0 +1,238 @@
+order-service-1         | [2025-03-19 06:56:31 +0000] [7] [ERROR] Exception in worker process
+kafka-1                 |       controller.listener.names = null
+order-service-1         | Traceback (most recent call last):
+kafka-1                 |       controller.quorum.append.linger.ms = 25
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 589, in spawn_w
+kafka-1                 |       controller.quorum.election.backoff.max.ms = 1000
+order-service-1         |     worker.init_process()
+kafka-1                 |       controller.quorum.election.timeout.ms = 1000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/gthread.py", line 92, in 
+kafka-1                 |       controller.quorum.fetch.timeout.ms = 2000
+order-service-1         |     super().init_process()
+kafka-1                 |       controller.quorum.request.timeout.ms = 2000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 134, in in
+kafka-1                 |       controller.quorum.retry.backoff.ms = 20
+order-service-1         |     self.load_wsgi()
+kafka-1                 |       controller.quorum.voters = []
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 146, in lo
+kafka-1                 |       controller.quota.window.num = 11
+order-service-1         |     self.wsgi = self.app.wsgi()
+kafka-1                 |       controller.quota.window.size.seconds = 1
+order-service-1         |                 ^^^^^^^^^^^^^^^
+kafka-1                 |       controller.socket.timeout.ms = 30000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 67, in wsgi
+kafka-1                 |       create.topic.policy.class.name = null
+order-service-1         |     self.callable = self.load()
+kafka-1                 |       default.replication.factor = 1
+order-service-1         |                     ^^^^^^^^^^^
+kafka-1                 |       delegation.token.expiry.check.interval.ms = 3600000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 58, in load
+kafka-1                 |       delegation.token.expiry.time.ms = 86400000
+order-service-1         |     return self.load_wsgiapp()
+kafka-1                 |       delegation.token.master.key = null
+order-service-1         |            ^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       delegation.token.max.lifetime.ms = 604800000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 48, in load
+kafka-1                 |       delegation.token.secret.key = null
+order-service-1         |     return util.import_app(self.app_uri)
+kafka-1                 |       delete.records.purgatory.purge.interval.requests = 1
+order-service-1         |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       delete.topic.enable = true
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 359, in import_app
+kafka-1                 |       early.start.listeners = null
+order-service-1         |     mod = importlib.import_module(module)
+kafka-1                 |       fetch.max.bytes = 57671680
+order-service-1         |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       fetch.purgatory.purge.interval.requests = 1000
+order-service-1         |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+kafka-1                 |       group.initial.rebalance.delay.ms = 3000
+order-service-1         |     return _bootstrap._gcd_import(name[level:], package, level)
+kafka-1                 |       group.max.session.timeout.ms = 1800000
+order-service-1         |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       group.max.size = 2147483647
+order-service-1         |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+kafka-1                 |       group.min.session.timeout.ms = 6000
+order-service-1         |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+kafka-1                 |       initial.broker.registration.timeout.ms = 60000
+order-service-1         |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+kafka-1                 |       inter.broker.listener.name = PLAINTEXT
+order-service-1         |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+kafka-1                 |       inter.broker.protocol.version = 3.3-IV3
+order-service-1         |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+kafka-1                 |       kafka.metrics.polling.interval.secs = 10
+order-service-1         |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+kafka-1                 |       kafka.metrics.reporters = []
+order-service-1         |   File "/app/run.py", line 1, in <module>
+kafka-1                 |       leader.imbalance.check.interval.seconds = 300
+order-service-1         |     from app import create_app, db
+kafka-1                 |       leader.imbalance.per.broker.percentage = 10
+order-service-1         |   File "/app/app/__init__.py", line 1, in <module>
+kafka-1                 |       listener.security.protocol.map = PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+order-service-1         |     from flask import Flask
+kafka-1                 |       listeners = PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/flask/__init__.py", line 5, in <module>
+kafka-1                 |       log.cleaner.backoff.ms = 15000
+order-service-1         |     from .app import Flask as Flask
+kafka-1                 |       log.cleaner.dedupe.buffer.size = 134217728
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 30, in <module>
+kafka-1                 |       log.cleaner.delete.retention.ms = 86400000
+order-service-1         |     from werkzeug.urls import url_quote
+kafka-1                 |       log.cleaner.enable = true
+order-service-1         | ImportError: cannot import name 'url_quote' from 'werkzeug.urls' (/usr/local/lib/python3.1ls.py)
+kafka-1                 |       log.cleaner.io.buffer.load.factor = 0.9
+order-service-1         | [2025-03-19 06:56:31 +0000] [7] [INFO] Worker exiting (pid: 7)
+kafka-1                 |       log.cleaner.io.buffer.size = 524288
+order-service-1         | [2025-03-19 06:56:31 +0000] [8] [ERROR] Exception in worker process
+kafka-1                 |       log.cleaner.io.max.bytes.per.second = 1.7976931348623157E308
+order-service-1         | Traceback (most recent call last):
+kafka-1                 |       log.cleaner.max.compaction.lag.ms = 9223372036854775807
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 589, in spawn_w
+kafka-1                 |       log.cleaner.min.cleanable.ratio = 0.5
+order-service-1         |     worker.init_process()
+kafka-1                 |       log.cleaner.min.compaction.lag.ms = 0
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/gthread.py", line 92, in 
+kafka-1                 |       log.cleaner.threads = 1
+order-service-1         |     super().init_process()
+kafka-1                 |       log.cleanup.policy = [delete]
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 134, in in
+kafka-1                 |       log.dir = /tmp/kafka-logs
+order-service-1         |     self.load_wsgi()
+kafka-1                 |       log.dirs = /var/lib/kafka/data
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 146, in lo
+kafka-1                 |       log.flush.interval.messages = 9223372036854775807
+order-service-1         |     self.wsgi = self.app.wsgi()
+kafka-1                 |       log.flush.interval.ms = null
+order-service-1         |                 ^^^^^^^^^^^^^^^
+kafka-1                 |       log.flush.offset.checkpoint.interval.ms = 60000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 67, in wsgi
+kafka-1                 |       log.flush.scheduler.interval.ms = 9223372036854775807
+order-service-1         |     self.callable = self.load()
+kafka-1                 |       log.flush.start.offset.checkpoint.interval.ms = 60000
+order-service-1         |                     ^^^^^^^^^^^
+kafka-1                 |       log.index.interval.bytes = 4096
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 58, in load
+kafka-1                 |       log.index.size.max.bytes = 10485760
+order-service-1         |     return self.load_wsgiapp()
+kafka-1                 |       log.message.downconversion.enable = true
+order-service-1 exited with code 1
+order-service-1         |            ^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       log.message.format.version = 3.0-IV1
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 48, in load
+kafka-1                 |       log.message.timestamp.difference.max.ms = 9223372036854775807
+order-service-1         |     return util.import_app(self.app_uri)
+kafka-1                 |       log.message.timestamp.type = CreateTime
+order-service-1         |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       log.preallocate = false
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 359, in import_app
+kafka-1                 |       log.retention.bytes = -1
+order-service-1         |     mod = importlib.import_module(module)
+kafka-1                 |       log.retention.check.interval.ms = 300000
+order-service-1         |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       log.retention.hours = 168
+order-service-1         |   File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+kafka-1                 |       log.retention.minutes = null
+order-service-1         |     return _bootstrap._gcd_import(name[level:], package, level)
+kafka-1                 |       log.retention.ms = null
+order-service-1         |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       log.roll.hours = 168
+order-service-1         |   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+kafka-1                 |       log.roll.jitter.hours = 0
+order-service-1         |   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+kafka-1                 |       log.roll.jitter.ms = null
+order-service-1         |   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+kafka-1                 |       log.roll.ms = null
+order-service-1         |   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+kafka-1                 |       log.segment.bytes = 1073741824
+order-service-1         |   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+kafka-1                 |       log.segment.delete.delay.ms = 60000
+order-service-1         |   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+kafka-1                 |       max.connection.creation.rate = 2147483647
+order-service-1         |   File "/app/run.py", line 1, in <module>
+kafka-1                 |       max.connections = 2147483647
+order-service-1         |     from app import create_app, db
+kafka-1                 |       max.connections.per.ip = 2147483647
+order-service-1         |   File "/app/app/__init__.py", line 1, in <module>
+kafka-1                 |       max.connections.per.ip.overrides =
+order-service-1         |     from flask import Flask
+kafka-1                 |       max.incremental.fetch.session.cache.slots = 1000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/flask/__init__.py", line 5, in <module>
+kafka-1                 |       message.max.bytes = 1048588
+order-service-1         |     from .app import Flask as Flask
+kafka-1                 |       metadata.log.dir = null
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/flask/app.py", line 30, in <module>
+kafka-1                 |       metadata.log.max.record.bytes.between.snapshots = 20971520
+order-service-1         |     from werkzeug.urls import url_quote
+kafka-1                 |       metadata.log.segment.bytes = 1073741824
+order-service-1         | ImportError: cannot import name 'url_quote' from 'werkzeug.urls' (/usr/local/lib/python3.1ls.py)
+kafka-1                 |       metadata.log.segment.min.bytes = 8388608
+order-service-1         | [2025-03-19 06:56:31 +0000] [8] [INFO] Worker exiting (pid: 8)
+kafka-1                 |       metadata.log.segment.ms = 604800000
+order-service-1         | Traceback (most recent call last):
+kafka-1                 |       metadata.max.idle.interval.ms = 500
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 209, in run
+kafka-1                 |       metadata.max.retention.bytes = -1
+order-service-1         |     self.sleep()
+kafka-1                 |       metadata.max.retention.ms = 604800000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 357, in sleep
+kafka-1                 |       metric.reporters = []
+order-service-1         |     ready = select.select([self.PIPE[0]], [], [], 1.0)
+kafka-1                 |       metrics.num.samples = 2
+order-service-1         |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+kafka-1                 |       metrics.recording.level = INFO
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 242, in handle_
+kafka-1                 |       metrics.sample.window.ms = 30000
+order-service-1         |     self.reap_workers()
+kafka-1                 |       min.insync.replicas = 1
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 525, in reap_wo
+kafka-1                 |       node.id = 1
+order-service-1         |     raise HaltServer(reason, self.WORKER_BOOT_ERROR)
+kafka-1                 |       num.io.threads = 8
+order-service-1         | gunicorn.errors.HaltServer: <HaltServer 'Worker failed to boot.' 3>
+kafka-1                 |       num.network.threads = 3
+order-service-1         | 
+kafka-1                 |       num.partitions = 1
+order-service-1         | During handling of the above exception, another exception occurred:
+kafka-1                 |       num.recovery.threads.per.data.dir = 1
+order-service-1         | 
+kafka-1                 |       num.replica.alter.log.dirs.threads = null
+order-service-1         | Traceback (most recent call last):
+kafka-1                 |       num.replica.fetchers = 1
+order-service-1         |   File "/usr/local/bin/gunicorn", line 8, in <module>
+kafka-1                 |       offset.metadata.max.bytes = 4096
+order-service-1         |     sys.exit(run())
+kafka-1                 |       offsets.commit.required.acks = -1
+order-service-1         |              ^^^^^
+kafka-1                 |       offsets.commit.timeout.ms = 5000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 67, in run
+kafka-1                 |       offsets.load.buffer.size = 5242880
+order-service-1         |     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]").run()
+kafka-1                 |       offsets.retention.check.interval.ms = 600000
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 231, in run
+kafka-1                 |       offsets.retention.minutes = 10080
+order-service-1         |     super().run()
+kafka-1                 |       offsets.topic.compression.codec = 0
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 72, in run
+kafka-1                 |       offsets.topic.num.partitions = 50
+order-service-1         |     Arbiter(self).run()
+kafka-1                 |       offsets.topic.replication.factor = 1
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 229, in run
+kafka-1                 |       offsets.topic.segment.bytes = 104857600
+order-service-1         |     self.halt(reason=inst.reason, exit_status=inst.exit_status)
+kafka-1                 |       password.encoder.cipher.algorithm = AES/CBC/PKCS5Padding
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 342, in halt
+kafka-1                 |       password.encoder.iterations = 4096
+order-service-1         |     self.stop()
+kafka-1                 |       password.encoder.key.length = 128
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 393, in stop
+kafka-1                 |       password.encoder.keyfactory.algorithm = null
+order-service-1         |     time.sleep(0.1)
+kafka-1                 |       password.encoder.old.secret = null
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 242, in handle_
+kafka-1                 |       password.encoder.secret = null
+order-service-1         |     self.reap_workers()
+kafka-1                 |       principal.builder.class = class org.apache.kafka.common.security.authenticator.Defau
+order-service-1         |   File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 525, in reap_wo
+kafka-1                 |       process.roles = []
+order-service-1         |     raise HaltServer(reason, self.WORKER_BOOT_ERROR)
+kafka-1                 |       producer.purgatory.purge.interval.requests = 1000
+order-service-1         | gunicorn.errors.HaltServer: <HaltServer 'Worker failed to boot.' 3>

@@ -1,25 +1,21 @@
-FROM node:18-alpine as builder
+FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY prisma ./prisma/
+# Copy requirements first for better caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN npm install
-RUN npx prisma generate
-
+# Copy application code
 COPY . .
-RUN npm run build
 
-FROM node:18-alpine
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
 
-WORKDIR /app
-
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/prisma ./prisma
+# Create database migrations directory if it doesn't exist
+RUN mkdir -p migrations
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+# Command to run the application
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "run:app"]

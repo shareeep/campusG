@@ -2,12 +2,14 @@ from flask import Blueprint, request, jsonify, current_app
 from app.models.models import Order, OrderStatus
 from app import db
 from app.sagas.create_order_saga import CreateOrderSaga
+from app.services.kafka_service import kafka_client
 import uuid
+from datetime import datetime
 
 api = Blueprint('api', __name__)
 
 @api.route('/orders', methods=['GET'])
-async def get_orders():
+def get_orders():
     """Get all orders"""
     try:
         page = request.args.get('page', 1, type=int)
@@ -28,10 +30,15 @@ async def get_orders():
         current_app.logger.error(f"Error getting orders: {str(e)}")
         return jsonify({'error': 'Failed to retrieve orders'}), 500
 
-@api.route('/orders/<order_id>', methods=['GET'])
-async def get_order(order_id):
+@api.route('/getOrderDetails', methods=['GET'])
+def get_order_details():
     """Get a specific order by ID"""
     try:
+        order_id = request.args.get('orderId')
+        
+        if not order_id:
+            return jsonify({'error': 'Missing orderId parameter'}), 400
+            
         order = Order.query.get(order_id)
         
         if not order:
@@ -42,8 +49,8 @@ async def get_order(order_id):
         current_app.logger.error(f"Error getting order {order_id}: {str(e)}")
         return jsonify({'error': 'Failed to retrieve order'}), 500
 
-@api.route('/orders', methods=['POST'])
-async def create_order():
+@api.route('/createOrder', methods=['POST'])
+def create_order():
     """Create a new order"""
     try:
         data = request.json
@@ -59,13 +66,23 @@ async def create_order():
             
         # Create and execute the saga
         saga = CreateOrderSaga(customer_id, order_details)
-        result = await saga.execute()
+        result = saga.execute()
         
         if not result['success']:
             return jsonify({'error': result['error']}), 400
             
         # Get the created order
         order = Order.query.get(result['order_id'])
+        
+        # Publish order.created event
+        kafka_client.publish('order-events', {
+            'type': 'order.created',
+            'payload': {
+                'orderId': order.id,
+                'customerId': order.cust_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        })
         
         return jsonify({
             'message': 'Order created successfully',
@@ -75,15 +92,16 @@ async def create_order():
         current_app.logger.error(f"Error creating order: {str(e)}")
         return jsonify({'error': 'Failed to create order'}), 500
 
-@api.route('/orders/<order_id>/status', methods=['PATCH'])
-async def update_order_status(order_id):
+@api.route('/updateOrderStatus', methods=['POST'])
+def update_order_status():
     """Update the status of an order"""
     try:
         data = request.json
         
-        if not data or 'status' not in data:
-            return jsonify({'error': 'Missing status field'}), 400
+        if not data or 'orderId' not in data or 'status' not in data:
+            return jsonify({'error': 'Missing required fields: orderId or status'}), 400
             
+        order_id = data['orderId']
         status = data['status']
         
         # Validate status is a valid OrderStatus
@@ -102,6 +120,25 @@ async def update_order_status(order_id):
         order.order_status = new_status
         db.session.commit()
         
+        # Publish order.updated and order.statusUpdated events
+        kafka_client.publish('order-events', {
+            'type': 'order.updated',
+            'payload': {
+                'orderId': order.id,
+                'status': new_status.name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        })
+        
+        kafka_client.publish('order-events', {
+            'type': 'order.statusUpdated',
+            'payload': {
+                'orderId': order.id,
+                'status': new_status.name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        })
+        
         return jsonify({
             'message': 'Order status updated successfully',
             'order': order.to_dict()
@@ -111,15 +148,16 @@ async def update_order_status(order_id):
         current_app.logger.error(f"Error updating order status: {str(e)}")
         return jsonify({'error': 'Failed to update order status'}), 500
 
-@api.route('/orders/<order_id>/accept', methods=['POST'])
-async def accept_order(order_id):
-    """Accept an order (runner)"""
+@api.route('/verifyAndAcceptOrder', methods=['POST'])
+def verify_and_accept_order():
+    """Verifies order availability and accepts it (runner)"""
     try:
         data = request.json
         
-        if not data or 'runnerId' not in data:
-            return jsonify({'error': 'Missing runnerId field'}), 400
+        if not data or 'orderId' not in data or 'runnerId' not in data:
+            return jsonify({'error': 'Missing required fields: orderId or runnerId'}), 400
             
+        order_id = data['orderId']
         runner_id = data['runnerId']
         
         # Get the order
@@ -142,7 +180,15 @@ async def accept_order(order_id):
         db.session.commit()
         
         # Here we would typically call the Accept Order Saga
-        # For now, we'll just return success
+        # For now, we'll publish the order.accepted event
+        kafka_client.publish('order-events', {
+            'type': 'order.accepted',
+            'payload': {
+                'orderId': order.id,
+                'runnerId': runner_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        })
         
         return jsonify({
             'message': 'Order accepted successfully',
@@ -153,10 +199,17 @@ async def accept_order(order_id):
         current_app.logger.error(f"Error accepting order: {str(e)}")
         return jsonify({'error': 'Failed to accept order'}), 500
 
-@api.route('/orders/<order_id>/cancel', methods=['POST'])
-async def cancel_order(order_id):
+@api.route('/cancelOrder', methods=['POST'])
+def cancel_order():
     """Cancel an order"""
     try:
+        data = request.json
+        
+        if not data or 'orderId' not in data:
+            return jsonify({'error': 'Missing orderId field'}), 400
+            
+        order_id = data['orderId']
+        
         # Get the order
         order = Order.query.get(order_id)
         
@@ -171,8 +224,15 @@ async def cancel_order(order_id):
         order.order_status = OrderStatus.CANCELLED
         db.session.commit()
         
-        # Here we would typically handle refunds, notifications, etc.
-        # For now, we'll just return success
+        # Publish order.cancelled event
+        kafka_client.publish('order-events', {
+            'type': 'order.cancelled',
+            'payload': {
+                'orderId': order.id,
+                'previousStatus': order.order_status.name,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        })
         
         return jsonify({
             'message': 'Order cancelled successfully',
@@ -183,10 +243,65 @@ async def cancel_order(order_id):
         current_app.logger.error(f"Error cancelling order: {str(e)}")
         return jsonify({'error': 'Failed to cancel order'}), 500
 
-@api.route('/orders/<order_id>/complete', methods=['POST'])
-async def complete_order(order_id):
+@api.route('/cancelAcceptance', methods=['POST'])
+def cancel_acceptance():
+    """Reverts acceptance of an order (runner cancels)"""
+    try:
+        data = request.json
+        
+        if not data or 'orderId' not in data:
+            return jsonify({'error': 'Missing orderId field'}), 400
+            
+        order_id = data['orderId']
+        
+        # Get the order
+        order = Order.query.get(order_id)
+        
+        if not order:
+            return jsonify({'error': 'Order not found'}), 404
+            
+        # Check if order is in ACCEPTED state
+        if order.order_status != OrderStatus.ACCEPTED:
+            return jsonify({'error': f"Order cannot have acceptance cancelled in status: {order.order_status.name}"}), 400
+            
+        # Store runner_id before clearing it for the event
+        runner_id = order.runner_id
+        
+        # Update the order
+        order.runner_id = None
+        order.order_status = OrderStatus.READY_FOR_PICKUP
+        db.session.commit()
+        
+        # Publish order.acceptanceCancelled event
+        kafka_client.publish('order-events', {
+            'type': 'order.acceptanceCancelled',
+            'payload': {
+                'orderId': order.id,
+                'runnerId': runner_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        })
+        
+        return jsonify({
+            'message': 'Order acceptance cancelled successfully',
+            'order': order.to_dict()
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error cancelling order acceptance: {str(e)}")
+        return jsonify({'error': 'Failed to cancel order acceptance'}), 500
+
+@api.route('/completeOrder', methods=['POST'])
+def complete_order():
     """Complete an order (delivered and payment captured)"""
     try:
+        data = request.json
+        
+        if not data or 'orderId' not in data:
+            return jsonify({'error': 'Missing orderId field'}), 400
+            
+        order_id = data['orderId']
+        
         # Get the order
         order = Order.query.get(order_id)
         
@@ -202,8 +317,18 @@ async def complete_order(order_id):
         order.end_time = db.func.now()
         db.session.commit()
         
+        # Publish order.completed event
+        kafka_client.publish('order-events', {
+            'type': 'order.completed',
+            'payload': {
+                'orderId': order.id,
+                'customerId': order.cust_id,
+                'runnerId': order.runner_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        })
+        
         # Here we would typically call the Complete Order Saga
-        # For now, we'll just return success
         
         return jsonify({
             'message': 'Order completed successfully',

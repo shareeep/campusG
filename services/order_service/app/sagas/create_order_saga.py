@@ -4,7 +4,7 @@ import requests
 from datetime import datetime, timedelta
 from flask import current_app
 from decimal import Decimal
-from app.models.models import Order, OrderStatus, PaymentStatus
+from app.models.models import Order, OrderStatus
 from app import db
 from app.services.kafka_service import kafka_client
 
@@ -12,13 +12,18 @@ class CreateOrderSaga:
     """
     Create Order Saga
     
-    This saga orchestrates the process of creating a new order:
-    1. Validate customer details
-    2. Create order record
-    3. Authorize payment
-    4. Hold funds in escrow
-    5. Start order timeout timer
-    6. Send notifications
+    This saga orchestrates the process of creating a new order following these steps:
+    1. Get user data from User Service
+    2. Create order record in Order Service (generate ID)
+    3. Log pending payment to Kafka notification service
+    4. Authorize payment via Payment Service (Stripe integration)
+    5. Log payment authorization to Kafka notification service
+    6. Hold funds in Escrow Service
+    7. Log escrow placement to Kafka notification service
+    8. Update order status to "created" in Order Service
+    9. Log status update to Kafka notification service
+    10. Start order timeout timer in Scheduler Service (30 min)
+    11. Update UI with new order status
     """
     
     def __init__(self, customer_id, order_details):
@@ -33,8 +38,9 @@ class CreateOrderSaga:
         self.order_details = order_details
         self.payment_amount = self.calculate_total(order_details)
         self.order_id = None
+        self.user_data = None
         
-    async def execute(self):
+    def execute(self):
         """
         Start the create order saga
         
@@ -42,63 +48,97 @@ class CreateOrderSaga:
             dict: Result of the saga execution with success status and order ID or error
         """
         try:
-            # Step 1: Validate customer
-            customer_valid = await self.validate_customer()
-            if not customer_valid['success']:
-                return {'success': False, 'error': customer_valid['error']}
+            # Step 1: Get user data from User Service
+            user_data = self.get_user_data()
+            if not user_data['success']:
+                return {'success': False, 'error': user_data['error']}
+            
+            self.user_data = user_data.get('data', {})
                 
-            # Step 2: Create order record
-            order_created = await self.create_order()
+            # Step 2: Create order record in Order Service
+            order_created = self.create_order_record()
             if not order_created['success']:
                 return {'success': False, 'error': order_created['error']}
                 
-            # Step 3: Authorize payment
-            payment_authorized = await self.authorize_payment()
+            # Step 3: Log pending payment to Notification Service
+            self.log_to_notification_service('PENDING_PAYMENT', {
+                'orderId': self.order_id,
+                'customerId': self.customer_id,
+                'status': 'pendingPayment'
+            })
+                
+            # Step 4: Authorize payment via Payment Service
+            payment_authorized = self.authorize_payment()
             if not payment_authorized['success']:
                 # Compensating transaction: update order status to failed
-                await self.update_order_status(OrderStatus.CANCELLED)
+                self.update_order_status(OrderStatus.CANCELLED)
                 return {'success': False, 'error': payment_authorized['error']}
                 
-            # Step 4: Hold funds in escrow
-            funds_held = await self.hold_funds_in_escrow()
+            # Step 5: Log payment authorization to Notification Service
+            self.log_to_notification_service('PAYMENT_AUTHORIZED', {
+                'orderId': self.order_id,
+                'customerId': self.customer_id,
+                'amount': float(self.payment_amount)
+            })
+                
+            # Step 6: Hold funds in Escrow Service
+            funds_held = self.hold_funds_in_escrow()
             if not funds_held['success']:
                 # Compensating transaction: release payment authorization
-                await self.release_payment_authorization()
-                await self.update_order_status(OrderStatus.CANCELLED)
+                self.release_payment_authorization()
+                self.update_order_status(OrderStatus.CANCELLED)
                 return {'success': False, 'error': funds_held['error']}
                 
-            # Step 5: Start order timeout timer
-            await self.start_order_timeout_timer()
+            # Step 7: Log escrow placement to Notification Service
+            self.log_to_notification_service('ESCROW_PLACED', {
+                'orderId': self.order_id,
+                'customerId': self.customer_id,
+                'amount': float(self.payment_amount)
+            })
+                
+            # Step 8: Update order status to created
+            status_updated = self.update_order_status(OrderStatus.CREATED)
+            if not status_updated['success']:
+                # This is not critical - we can still proceed but log the error
+                current_app.logger.error(f"Failed to update order status: {status_updated['error']}")
+                
+            # Step 9: Log status update to Notification Service
+            self.log_to_notification_service('ORDER_CREATED', {
+                'orderId': self.order_id,
+                'customerId': self.customer_id,
+                'status': 'created'
+            })
+                
+            # Step 10: Start order timeout timer in Scheduler Service
+            timer_started = self.start_order_timeout_timer()
+            if not timer_started['success']:
+                # This is not critical - we can still proceed but log the error
+                current_app.logger.error(f"Failed to start order timeout timer: {timer_started['error']}")
             
-            # Step 6: Send notifications
-            await self.send_notifications()
-            
-            # Update order status to ready for pickup
-            await self.update_order_status(OrderStatus.READY_FOR_PICKUP)
-            
-            # Success
+            # Success - return order ID
             return {
                 'success': True,
                 'order_id': self.order_id
             }
+            
         except Exception as e:
             current_app.logger.error(f"Error executing Create Order saga: {str(e)}")
             
             # Attempt to clean up if possible
             if self.order_id:
-                await self.update_order_status(OrderStatus.CANCELLED)
+                self.update_order_status(OrderStatus.CANCELLED)
                 
             return {
                 'success': False,
                 'error': f"Unexpected error: {str(e)}"
             }
             
-    async def validate_customer(self):
+    def get_user_data(self):
         """
-        Validate that the customer exists and has a valid payment method
+        Step 1: Get user data from User Service
         
         Returns:
-            dict: Result of validation with success status and optional error
+            dict: Result of user validation with success status and optional error
         """
         try:
             response = requests.get(
@@ -119,7 +159,10 @@ class CreateOrderSaga:
             if not customer.get('paymentDetails'):
                 return {'success': False, 'error': 'Customer has no payment method'}
                 
-            return {'success': True}
+            return {
+                'success': True,
+                'data': customer
+            }
         except Exception as e:
             current_app.logger.error(f"Error validating customer: {str(e)}")
             return {
@@ -127,9 +170,9 @@ class CreateOrderSaga:
                 'error': f"Failed to validate customer: {str(e)}"
             }
             
-    async def create_order(self):
+    def create_order_record(self):
         """
-        Create the order record in the database
+        Step 2: Create the order record in the database
         
         Returns:
             dict: Result of order creation with success status and optional error
@@ -143,15 +186,13 @@ class CreateOrderSaga:
             
             # Create a new order
             order = Order(
-                id=str(uuid.uuid4()),
+                order_id=str(uuid.uuid4()),
                 cust_id=self.customer_id,
                 order_description=json.dumps(food_items),
                 food_fee=food_fee,
                 delivery_fee=delivery_fee,
                 delivery_location=delivery_location,
-                payment_status=PaymentStatus.PENDING,
-                order_status=OrderStatus.CREATED,
-                start_time=datetime.utcnow()
+                order_status=OrderStatus.PENDING
             )
             
             # Save to database
@@ -159,13 +200,13 @@ class CreateOrderSaga:
             db.session.commit()
             
             # Store order ID
-            self.order_id = order.id
+            self.order_id = order.order_id
             
             # Publish order created event
             kafka_client.publish('order-events', {
                 'type': 'ORDER_CREATED',
                 'payload': {
-                    'orderId': order.id,
+                    'orderId': order.order_id,
                     'customerId': self.customer_id,
                     'amount': float(food_fee + delivery_fee)
                 }
@@ -179,10 +220,29 @@ class CreateOrderSaga:
                 'success': False,
                 'error': f"Failed to create order: {str(e)}"
             }
-            
-    async def authorize_payment(self):
+    
+    def log_to_notification_service(self, event_type, payload):
         """
-        Authorize payment with payment service
+        Log event to Notification Service via Kafka
+        
+        Args:
+            event_type (str): Type of event
+            payload (dict): Event payload
+        """
+        try:
+            kafka_client.publish('notification-events', {
+                'type': event_type,
+                'payload': payload,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+            current_app.logger.info(f"Published {event_type} event to notification service")
+        except Exception as e:
+            current_app.logger.error(f"Error publishing {event_type} event: {str(e)}")
+            # We continue despite notification errors
+            
+    def authorize_payment(self):
+        """
+        Step 4: Authorize payment with payment service
         
         Returns:
             dict: Result of payment authorization with success status and optional error
@@ -211,24 +271,18 @@ class CreateOrderSaga:
                     'error': result.get('message', 'Payment authorization failed')
                 }
                 
-            # Update order payment status
-            order = Order.query.get(self.order_id)
-            if order:
-                order.payment_status = PaymentStatus.AUTHORIZED
-                db.session.commit()
-                
+            # Payment service will handle updating the payment status internally
             return {'success': True}
         except Exception as e:
-            db.session.rollback()
             current_app.logger.error(f"Error authorizing payment: {str(e)}")
             return {
                 'success': False,
                 'error': f"Failed to authorize payment: {str(e)}"
             }
             
-    async def hold_funds_in_escrow(self):
+    def hold_funds_in_escrow(self):
         """
-        Hold funds in escrow
+        Step 6: Hold funds in escrow
         
         Returns:
             dict: Result of escrow operation with success status and optional error
@@ -272,28 +326,38 @@ class CreateOrderSaga:
                 'error': f"Failed to hold funds in escrow: {str(e)}"
             }
             
-    async def release_payment_authorization(self):
+    def release_payment_authorization(self):
         """
         Release payment authorization (compensating transaction)
         """
         try:
-            requests.post(
+            response = requests.post(
                 f"{current_app.config['PAYMENT_SERVICE_URL']}/api/payments/release",
                 json={'orderId': self.order_id}
             )
+            
+            if response.status_code != 200:
+                current_app.logger.error(f"Failed to release payment: {response.text}")
+                return False
+            
+            return True
         except Exception as e:
             current_app.logger.error(f"Error releasing payment authorization: {str(e)}")
+            return False
             # We log but don't raise as this is a compensating transaction
             
-    async def start_order_timeout_timer(self):
+    def start_order_timeout_timer(self):
         """
-        Start order timeout timer
+        Step 10: Start order timeout timer
+        
+        Returns:
+            dict: Result of timer creation with success status and optional error
         """
         try:
             # Schedule an event 30 minutes in the future
             timeout_at = datetime.utcnow() + timedelta(minutes=30)
             
-            requests.post(
+            response = requests.post(
                 f"{current_app.config['SCHEDULER_SERVICE_URL']}/api/schedule",
                 json={
                     'eventType': 'ORDER_TIMEOUT',
@@ -305,39 +369,39 @@ class CreateOrderSaga:
                     }
                 }
             )
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f"Scheduler service error: {response.text}"
+                }
+                
+            result = response.json()
+            
+            if not result.get('success'):
+                return {
+                    'success': False,
+                    'error': result.get('message', 'Failed to schedule timeout')
+                }
+                
+            return {'success': True}
+            
         except Exception as e:
             current_app.logger.error(f"Error scheduling order timeout: {str(e)}")
-            # We continue despite errors here, as the order can still be processed
+            return {
+                'success': False, 
+                'error': f"Error scheduling timeout: {str(e)}"
+            }
             
-    async def send_notifications(self):
-        """
-        Send notifications about order creation
-        """
-        try:
-            requests.post(
-                f"{current_app.config['NOTIFICATION_SERVICE_URL']}/api/notifications",
-                json={
-                    'recipientId': self.customer_id,
-                    'recipientType': 'CUSTOMER',
-                    'notificationType': 'ORDER_CREATED',
-                    'title': 'Order Created',
-                    'message': f"Your order #{self.order_id} has been created and is being processed.",
-                    'data': {
-                        'orderId': self.order_id
-                    },
-                    'channel': 'APP'
-                }
-            )
-        except Exception as e:
-            current_app.logger.error(f"Error sending notification: {str(e)}")
-            # We continue despite notification errors
-            
-    async def update_order_status(self, status):
+    def update_order_status(self, status):
         """
         Update order status
         
         Args:
             status (OrderStatus): New status for the order
+            
+        Returns:
+            dict: Result of status update with success status and optional error
         """
         try:
             order = Order.query.get(self.order_id)
@@ -353,10 +417,15 @@ class CreateOrderSaga:
                         'status': status.name
                     }
                 })
+                
+                return {'success': True}
+            else:
+                return {'success': False, 'error': 'Order not found'}
+                
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error updating order status to {status.name}: {str(e)}")
-            # Status update failure should not stop the flow
+            return {'success': False, 'error': f"Error updating status: {str(e)}"}
             
     def calculate_total(self, order_details):
         """

@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-config
+  namespace: campusg
+data:
+  database_url: "postgresql://postgres:postgres@postgres:5432/order_db"
+  kafka_brokers: "kafka:29092"
+  user_service_url: "http://user-service:3000"
+  payment_service_url: "http://payment-service:3000"
+  escrow_service_url: "http://escrow-service:3000"
+  scheduler_service_url: "http://scheduler-service:3000"
+  notification_service_url: "http://notification-service:3000"
+  flask_env: "production"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: order-service-secrets
+  namespace: campusg
+type: Opaque
+data:
+  # Default value: "dev-key-please-change-in-production" (base64 encoded)
+  secret_key: ZGV2LWtleS1wbGVhc2UtY2hhbmdlLWluLXByb2R1Y3Rpb24=

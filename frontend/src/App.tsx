@@ -2,13 +2,7 @@ import { ClerkProvider } from '@clerk/clerk-react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { AppRoutes } from '@/routes';
 
-
-
-const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-
-if (!CLERK_PUBLISHABLE_KEY) {
-  throw new Error("Missing Clerk Publishable Key! Check your .env file.");
-}
+const CLERK_PUBLISHABLE_KEY = 'pk_test_aW1tb3J0YWwtYmVkYnVnLTc2LmNsZXJrLmFjY291bnRzLmRldiQ';
 
 function App() {
   return (
