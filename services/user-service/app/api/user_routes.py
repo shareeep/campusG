@@ -380,6 +380,12 @@ def clerk_webhook():
         # Still return 200 to Clerk to acknowledge receipt
         return jsonify({'success': False, 'message': f"Error processing webhook: {str(e)}"}), 200
 
+# def clerk_webhook():
+#     print("Webhook received!")
+#     print(request.headers)
+#     print(request.get_json())
+#     return jsonify({"status": "success"}), 200
+
 def extract_user_data(user_data):
     """Extract relevant user data from Clerk's user object"""
     try:
