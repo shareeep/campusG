@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, current_app
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from app.models.models import ScheduledEvent
 from app import db
@@ -7,7 +7,7 @@ from app import db
 api = Blueprint('api', __name__)
 
 @api.route('/schedule', methods=['POST'])
-async def schedule_event():
+def schedule_event():
     """
     Schedule a new event to be triggered at a specific time
     
@@ -44,12 +44,12 @@ async def schedule_event():
             
         # Create a new scheduled event
         event = ScheduledEvent(
-            id=str(uuid.uuid4()),
+            scheduler_id=str(uuid.uuid4()),
             event_type=event_type,
             entity_id=entity_id,
             scheduled_time=scheduled_time,
             payload=payload,
-            status='PENDING'
+            processed=False
         )
         
         # Save to database
@@ -61,7 +61,7 @@ async def schedule_event():
         return jsonify({
             'success': True,
             'message': 'Event scheduled successfully',
-            'eventId': event.id
+            'eventId': event.scheduler_id
         }), 200
         
     except Exception as e:
@@ -70,20 +70,20 @@ async def schedule_event():
         return jsonify({'success': False, 'message': f"Failed to schedule event: {str(e)}"}), 500
 
 @api.route('/events/<event_id>/cancel', methods=['POST'])
-async def cancel_event(event_id):
+def cancel_event(event_id):
     """Cancel a scheduled event"""
     try:
-        event = ScheduledEvent.query.get(event_id)
+        event = ScheduledEvent.query.filter_by(scheduler_id=event_id).first()
         
         if not event:
             return jsonify({'success': False, 'message': 'Event not found'}), 404
             
         # Check if event can be cancelled
-        if event.status != 'PENDING':
-            return jsonify({'success': False, 'message': f"Event cannot be cancelled in status: {event.status}"}), 400
+        if event.processed:
+            return jsonify({'success': False, 'message': "Event has already been processed and cannot be cancelled"}), 400
             
-        # Update the event status
-        event.status = 'CANCELLED'
+        # Update the event to processed (cancelled)
+        event.processed = True
         db.session.commit()
         
         return jsonify({
@@ -97,13 +97,13 @@ async def cancel_event(event_id):
         return jsonify({'success': False, 'message': f"Failed to cancel event: {str(e)}"}), 500
 
 @api.route('/events', methods=['GET'])
-async def get_events():
+def get_events():
     """Get all scheduled events with optional filtering"""
     try:
         # Query parameters
         event_type = request.args.get('eventType')
         entity_id = request.args.get('entityId')
-        status = request.args.get('status')
+        processed = request.args.get('processed')
         
         # Build query
         query = ScheduledEvent.query
@@ -114,8 +114,9 @@ async def get_events():
         if entity_id:
             query = query.filter_by(entity_id=entity_id)
             
-        if status:
-            query = query.filter_by(status=status)
+        if processed is not None:
+            processed_bool = processed.lower() == 'true'
+            query = query.filter_by(processed=processed_bool)
             
         # Get events
         events = query.all()
