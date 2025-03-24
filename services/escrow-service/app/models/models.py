@@ -1,5 +1,5 @@
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 import uuid
 from sqlalchemy import Numeric
@@ -24,8 +24,8 @@ class Escrow(db.Model):
     food_fee = db.Column(Numeric(10, 2), nullable=False)
     delivery_fee = db.Column(Numeric(10, 2), nullable=False)
     status = db.Column(db.Enum(EscrowStatus), nullable=False, default=EscrowStatus.PENDING, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
     
     def __repr__(self):
         return f"<Escrow {self.escrow_id} for order {self.order_id}>"

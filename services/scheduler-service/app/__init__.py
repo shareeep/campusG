@@ -14,12 +14,9 @@ def create_app(config=None):
     # Load default configuration
     app.config.from_mapping(
         SECRET_KEY=os.environ.get('SECRET_KEY', 'dev'),
-        SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/notification_db'),
+        SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/scheduler_db'),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         KAFKA_BOOTSTRAP_SERVERS=os.environ.get('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092'),
-        TWILIO_ACCOUNT_SID=os.environ.get('TWILIO_ACCOUNT_SID', ''),
-        TWILIO_AUTH_TOKEN=os.environ.get('TWILIO_AUTH_TOKEN', ''),
-        TWILIO_PHONE_NUMBER=os.environ.get('TWILIO_PHONE_NUMBER', ''),
     )
     
     # Load custom config if provided
@@ -31,8 +28,8 @@ def create_app(config=None):
     migrate.init_app(app, db)
     
     # Register blueprints
-    from app.api.notification_routes import api as notification_api
-    app.register_blueprint(notification_api, url_prefix='/api')
+    from app.api.scheduler_routes import api as scheduler_api
+    app.register_blueprint(scheduler_api, url_prefix='/api')
     
     # Health check endpoint
     @app.route('/health', methods=['GET'])

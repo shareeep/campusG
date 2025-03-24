@@ -112,8 +112,18 @@ def start_log_consumer_thread(app):
     
     def run_consumer():
         with app.app_context():
-            consumer = LogConsumer()
-            consumer.start()
+            try:
+                # Check if Kafka is enabled - if KAFKA_BOOTSTRAP_SERVERS is commented out in docker-compose.yml
+                # it might be set to empty string or None
+                bootstrap_servers = app.config.get('KAFKA_BOOTSTRAP_SERVERS')
+                if not bootstrap_servers or bootstrap_servers == 'localhost:9092':
+                    app.logger.warning("Kafka bootstrap servers not configured. Log consumer disabled.")
+                    return
+                
+                consumer = LogConsumer()
+                consumer.start()
+            except Exception as e:
+                app.logger.error(f"Failed to start log consumer: {str(e)}")
     
     # Start consumer in a background thread
     thread = threading.Thread(target=run_consumer, daemon=True)

@@ -1,21 +1,30 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Add build arg to force rebuild when needed
+ARG REBUILD=0
+
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Make sure Werkzeug version is compatible with Flask
+RUN pip install --no-cache-dir Werkzeug==2.2.3
 
 # Copy application code
 COPY . .
 
 # Set environment variables
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    FLASK_APP=run.py
 
 # Create database migrations directory if it doesn't exist
 RUN mkdir -p migrations
 
+# Expose the port the app runs on
 EXPOSE 3000
 
-# Command to run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "run:app"]
+# Run app
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "2", "--threads", "4", "run:app"]

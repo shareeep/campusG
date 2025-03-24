@@ -25,6 +25,11 @@ def create_app(config_class=Config):
     from app.api.routes import api as api_blueprint
     app.register_blueprint(api_blueprint, url_prefix='/api')
     
+    # Health check endpoint
+    @app.route('/health', methods=['GET'])
+    def health_check():
+        return {'status': 'healthy'}, 200
+    
     # Log configuration
     app.logger.info(f"Running with database: {app.config['SQLALCHEMY_DATABASE_URI']}")
     app.logger.info(f"Mock services enabled: {app.config.get('MOCK_SERVICES', False)}")

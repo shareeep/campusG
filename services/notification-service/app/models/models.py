@@ -1,5 +1,5 @@
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 import uuid
 
@@ -19,7 +19,7 @@ class Notification(db.Model):
     event = db.Column(db.String(255), nullable=False)
     status = db.Column(db.Enum(NotificationStatus), nullable=False, default=NotificationStatus.CREATED, index=True)
     sent_at = db.Column(db.DateTime, nullable=True, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
 
     def __repr__(self):
         return f"<Notification {self.notification_id} for order {self.order_id}>"
