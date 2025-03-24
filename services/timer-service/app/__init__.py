@@ -42,6 +42,31 @@ def create_app(config=None):
         from app.models import models
         
         # Create tables if they don't exist
-        db.create_all()
+        # Use try-except to handle the case where enum types already exist
+        try:
+            db.create_all()
+        except Exception as e:
+            app.logger.warning(f"Error during db.create_all(): {str(e)}")
+            
+            # If there's an error with duplicate types, try to create tables individually
+            # This approach will skip the enum type creation but still create tables
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            
+            # Get all table names from the models
+            model_tables = db.metadata.tables.keys()
+            
+            # Get existing tables in the database
+            existing_tables = inspector.get_table_names()
+            
+            # Create only tables that don't exist yet
+            for table_name in model_tables:
+                if table_name not in existing_tables:
+                    app.logger.info(f"Creating table {table_name}")
+                    try:
+                        # Create just this table
+                        db.metadata.tables[table_name].create(db.engine)
+                    except Exception as table_error:
+                        app.logger.error(f"Failed to create table {table_name}: {str(table_error)}")
     
     return app
