@@ -5,19 +5,19 @@ import traceback
 from sqlalchemy.exc import IntegrityError
 from app.models.models import User
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 
 api = Blueprint('api', __name__)
 
-@api.route('/users/<user_id>', methods=['GET'])
-def get_user(user_id):
+@api.route('/users/<clerk_user_id>', methods=['GET'])
+def get_user(clerk_user_id):
     """
     Get user information by ID
     
     This endpoint retrieves a user's information including their profile and payment data.
     """
     try:
-        user = User.query.get(user_id)
+        user = User.query.get(clerk_user_id)
         
         if not user:
             return jsonify({'success': False, 'message': 'User not found'}), 404
@@ -31,112 +31,12 @@ def get_user(user_id):
         }), 200
         
     except Exception as e:
-        current_app.logger.error(f"Error retrieving user {user_id}: {str(e)}")
+        current_app.logger.error(f"Error retrieving user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to retrieve user: {str(e)}"}), 500
 
-@api.route('/users', methods=['POST'])
-def create_user():
-    """
-    Create a new user
-    
-    Request body should contain:
-    {
-        "email": "user@example.com",
-        "firstName": "John",
-        "lastName": "Doe",
-        "phoneNumber": "+1234567890" (optional)
-    }
-    """
-    try:
-        data = request.json
-        
-        if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
-            
-        # Validate required fields
-        required_fields = ['email', 'firstName', 'lastName']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({'success': False, 'message': f"Missing required field: {field}"}), 400
-                
-        # Create new user
-        user = User(
-            user_id=str(uuid.uuid4()),
-            email=data['email'],
-            first_name=data['firstName'],
-            last_name=data['lastName'],
-            phone_number=data.get('phoneNumber')
-        )
-        
-        db.session.add(user)
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': 'User created successfully',
-            'user': user.to_dict()
-        }), 201
-        
-    except IntegrityError:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': 'Email already exists'}), 409
-        
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error creating user: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to create user: {str(e)}"}), 500
 
-@api.route('/users/<user_id>', methods=['PUT'])
-def update_user(user_id):
-    """
-    Update user information
-    
-    Request body should contain fields to update:
-    {
-        "firstName": "New First Name",
-        "lastName": "New Last Name",
-        "phoneNumber": "+1234567890"
-    }
-    """
-    try:
-        user = User.query.get(user_id)
-        
-        if not user:
-            return jsonify({'success': False, 'message': 'User not found'}), 404
-            
-        data = request.json
-        
-        if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
-            
-        # Update fields
-        if 'firstName' in data:
-            user.first_name = data['firstName']
-            
-        if 'lastName' in data:
-            user.last_name = data['lastName']
-            
-        if 'phoneNumber' in data:
-            user.phone_number = data['phoneNumber']
-            
-        # Update timestamp
-        user.updated_at = datetime.utcnow()
-        
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': 'User updated successfully',
-            'user': user.to_dict()
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error updating user {user_id}: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to update user: {str(e)}"}), 500
-
-@api.route('/users/<user_id>/payment', methods=['PUT'])
-def update_payment_info(user_id):
+@api.route('/users/<clerk_user_id>/payment', methods=['PUT'])
+def update_payment_info(clerk_user_id):
     """
     Update user payment information
     
@@ -150,7 +50,7 @@ def update_payment_info(user_id):
     }
     """
     try:
-        user = User.query.get(user_id)
+        user = User.query.get(clerk_user_id)
         
         if not user:
             return jsonify({'success': False, 'message': 'User not found'}), 404
@@ -171,7 +71,7 @@ def update_payment_info(user_id):
             'token': data.get('stripeToken', '')
         }
         
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
         db.session.commit()
         
         return jsonify({
@@ -181,18 +81,18 @@ def update_payment_info(user_id):
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error updating payment info for user {user_id}: {str(e)}")
+        current_app.logger.error(f"Error updating payment info for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update payment information: {str(e)}"}), 500
 
-@api.route('/users/<user_id>/payment-info', methods=['GET'])
-def get_payment_info(user_id):
+@api.route('/users/<clerk_user_id>/payment-info', methods=['GET'])
+def get_payment_info(clerk_user_id):
     """
     Get user's payment information
     
     This endpoint is used by other services (like Payment Service) to retrieve payment method info.
     """
     try:
-        user = User.query.get(user_id)
+        user = User.query.get(clerk_user_id)
         
         if not user:
             return jsonify({'success': False, 'message': 'User not found'}), 404
@@ -206,11 +106,11 @@ def get_payment_info(user_id):
         }), 200
         
     except Exception as e:
-        current_app.logger.error(f"Error retrieving payment info for user {user_id}: {str(e)}")
+        current_app.logger.error(f"Error retrieving payment info for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to retrieve payment information: {str(e)}"}), 500
 
-@api.route('/users/<user_id>/update-customer-rating', methods=['POST'])
-def update_customer_rating(user_id):
+@api.route('/users/<clerk_user_id>/update-customer-rating', methods=['POST'])
+def update_customer_rating(clerk_user_id):
     """
     Update the customer rating
     
@@ -220,7 +120,7 @@ def update_customer_rating(user_id):
     }
     """
     try:
-        user = User.query.get(user_id)
+        user = User.query.get(clerk_user_id)
         
         if not user:
             return jsonify({'success': False, 'message': 'User not found'}), 404
@@ -232,7 +132,7 @@ def update_customer_rating(user_id):
             
         # Update the rating
         user.customer_rating = data['rating']
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
         db.session.commit()
         
         return jsonify({
@@ -242,11 +142,11 @@ def update_customer_rating(user_id):
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error updating customer rating for user {user_id}: {str(e)}")
+        current_app.logger.error(f"Error updating customer rating for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update customer rating: {str(e)}"}), 500
 
-@api.route('/users/<user_id>/update-runner-rating', methods=['POST'])
-def update_runner_rating(user_id):
+@api.route('/users/<clerk_user_id>/update-runner-rating', methods=['POST'])
+def update_runner_rating(clerk_user_id):
     """
     Update the runner rating
     
@@ -256,7 +156,7 @@ def update_runner_rating(user_id):
     }
     """
     try:
-        user = User.query.get(user_id)
+        user = User.query.get(clerk_user_id)
         
         if not user:
             return jsonify({'success': False, 'message': 'User not found'}), 404
@@ -268,7 +168,7 @@ def update_runner_rating(user_id):
             
         # Update the rating
         user.runner_rating = data['rating']
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
         db.session.commit()
         
         return jsonify({
@@ -278,7 +178,7 @@ def update_runner_rating(user_id):
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error updating runner rating for user {user_id}: {str(e)}")
+        current_app.logger.error(f"Error updating runner rating for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update runner rating: {str(e)}"}), 500
 
 @api.route('/list-users', methods=['GET'])
@@ -290,8 +190,8 @@ def list_user_ids():
     Useful for testing and development purposes.
     """
     try:
-        # Query just the user_id column for efficiency
-        user_ids = [user.user_id for user in User.query.with_entities(User.user_id).all()]
+        # Query just the clerk_user_id column for efficiency
+        user_ids = [user.clerk_user_id for user in User.query.with_entities(User.clerk_user_id).all()]
         
         if not user_ids:
             return jsonify({
@@ -308,31 +208,6 @@ def list_user_ids():
     except Exception as e:
         current_app.logger.error(f"Error retrieving user IDs: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to retrieve user IDs: {str(e)}"}), 500
-
-@api.route('/users/clerk/<clerk_user_id>', methods=['GET'])
-def get_user_by_clerk_id(clerk_user_id):
-    """
-    Get user information by Clerk ID
-    
-    This endpoint retrieves a user's information by their Clerk ID.
-    """
-    try:
-        user = User.query.filter_by(clerk_user_id=clerk_user_id).first()
-        
-        if not user:
-            return jsonify({'success': False, 'message': 'User not found'}), 404
-            
-        # Include payment details by default
-        include_payment_details = request.args.get('includePaymentDetails', 'true').lower() == 'true'
-        
-        return jsonify({
-            'success': True,
-            'user': user.to_dict(include_payment_details=include_payment_details)
-        }), 200
-        
-    except Exception as e:
-        current_app.logger.error(f"Error retrieving user with Clerk ID {clerk_user_id}: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to retrieve user: {str(e)}"}), 500
 
 @api.route('/webhook/clerk', methods=['POST'])
 def clerk_webhook():
@@ -380,12 +255,6 @@ def clerk_webhook():
         # Still return 200 to Clerk to acknowledge receipt
         return jsonify({'success': False, 'message': f"Error processing webhook: {str(e)}"}), 200
 
-# def clerk_webhook():
-#     print("Webhook received!")
-#     print(request.headers)
-#     print(request.get_json())
-#     return jsonify({"status": "success"}), 200
-
 def extract_user_data(user_data):
     """Extract relevant user data from Clerk's user object"""
     try:
@@ -398,13 +267,45 @@ def extract_user_data(user_data):
         primary_phone = None
         if user_data.get('phone_numbers') and len(user_data['phone_numbers']) > 0:
             primary_phone = user_data['phone_numbers'][0].get('phone_number')
+        
+        # Get timestamps if available
+        created_at = None
+        if user_data.get('created_at'):
+            try:
+                # Handle ISO format string
+                if isinstance(user_data['created_at'], str):
+                    created_at = datetime.fromisoformat(user_data['created_at'].replace('Z', '+00:00'))
+                # Handle Unix timestamp (integer)
+                elif isinstance(user_data['created_at'], (int, float)):
+                    created_at = datetime.fromtimestamp(user_data['created_at'], tz=timezone.utc)
+                else:
+                    created_at = datetime.now(timezone.utc)
+            except (ValueError, TypeError):
+                created_at = datetime.now(timezone.utc)
+                
+        updated_at = None
+        if user_data.get('updated_at'):
+            try:
+                # Handle ISO format string
+                if isinstance(user_data['updated_at'], str):
+                    updated_at = datetime.fromisoformat(user_data['updated_at'].replace('Z', '+00:00'))
+                # Handle Unix timestamp (integer)
+                elif isinstance(user_data['updated_at'], (int, float)):
+                    updated_at = datetime.fromtimestamp(user_data['updated_at'], tz=timezone.utc)
+                else:
+                    updated_at = datetime.now(timezone.utc)
+            except (ValueError, TypeError):
+                updated_at = datetime.now(timezone.utc)
             
         return {
             'clerk_user_id': user_data.get('id'),
             'email': primary_email,
             'first_name': user_data.get('first_name', ''),
             'last_name': user_data.get('last_name', ''),
-            'phone_number': primary_phone
+            'phone_number': primary_phone,
+            'username': user_data.get('username'),
+            'created_at': created_at,
+            'updated_at': updated_at
         }
     except Exception as e:
         current_app.logger.error(f"Error extracting user data: {str(e)}")
@@ -413,17 +314,22 @@ def extract_user_data(user_data):
             'clerk_user_id': user_data.get('id'),
             'email': '',
             'first_name': '',
-            'last_name': ''
+            'last_name': '',
+            'created_at': datetime.now(timezone.utc),
+            'updated_at': datetime.now(timezone.utc)
         }
 
 def handle_user_created(user_data):
     """Handle user.created event from Clerk"""
     try:
+        # Log the raw user data for debugging
+        current_app.logger.debug(f"User data from Clerk: {json.dumps(user_data, default=str)}")
+        
         # Extract user data
         data = extract_user_data(user_data)
         
-        if not data['email']:
-            current_app.logger.error("Email missing from user.created event")
+        if not data['clerk_user_id']:
+            current_app.logger.error("Clerk user ID missing from user.created event")
             return
             
         # Check if user already exists with this clerk_user_id
@@ -432,33 +338,40 @@ def handle_user_created(user_data):
             current_app.logger.info(f"User with Clerk ID {data['clerk_user_id']} already exists")
             return
             
-        # Also check by email to prevent duplicates
-        existing_email_user = User.query.filter_by(email=data['email']).first()
-        if existing_email_user:
-            # Update the existing user with the Clerk ID
-            existing_email_user.clerk_user_id = data['clerk_user_id']
-            db.session.commit()
-            current_app.logger.info(f"Updated existing user {existing_email_user.user_id} with Clerk ID {data['clerk_user_id']}")
-            return
+        # If we have an email, check if user exists by emai
+        if data['email']:
+            existing_email_user = User.query.filter_by(email=data['email']).first()
+            if existing_email_user:
+                # Update the existing user with the Clerk ID
+                existing_email_user.clerk_user_id = data['clerk_user_id']
+                db.session.commit()
+                current_app.logger.info(f"Updated existing user with Clerk ID {data['clerk_user_id']}")
+                return
+        else:
+            # Generate a placeholder email if none provided
+            current_app.logger.warning("Email missing from user.created event, using placeholder")
+            data['email'] = f"temp_{data['clerk_user_id']}@placeholder.com"
             
         # Create new user
         user = User(
-            user_id=str(uuid.uuid4()),
             clerk_user_id=data['clerk_user_id'],
             email=data['email'],
-            first_name=data['first_name'],
-            last_name=data['last_name'],
-            phone_number=data['phone_number']
+            first_name=data['first_name'] or "",
+            last_name=data['last_name'] or "",
+            phone_number=data['phone_number'],
+            username=data['username'],  # Added username field
+            created_at=data['created_at'] or datetime.now(timezone.utc),
+            updated_at=data['updated_at'] or datetime.now(timezone.utc)
         )
         
         db.session.add(user)
         db.session.commit()
         
-        current_app.logger.info(f"Created new user from Clerk: {user.user_id} with Clerk ID {data['clerk_user_id']}")
+        current_app.logger.info(f"Created new user from Clerk with ID {data['clerk_user_id']}")
         
-    except IntegrityError:
+    except IntegrityError as ie:
         db.session.rollback()
-        current_app.logger.error(f"Integrity error creating user from Clerk event")
+        current_app.logger.error(f"Integrity error creating user from Clerk event: {str(ie)}")
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error handling user.created: {str(e)}")
@@ -466,6 +379,9 @@ def handle_user_created(user_data):
 def handle_user_updated(user_data):
     """Handle user.updated event from Clerk"""
     try:
+        # Log the raw user data for debugging
+        current_app.logger.debug(f"User update data from Clerk: {json.dumps(user_data, default=str)}")
+        
         # Extract user data
         data = extract_user_data(user_data)
         
@@ -483,6 +399,7 @@ def handle_user_updated(user_data):
             if not user:
                 current_app.logger.warning(f"User not found for update: Clerk ID {data['clerk_user_id']}")
                 # Create the user if they don't exist
+                current_app.logger.info(f"Attempting to create missing user: {data['clerk_user_id']}")
                 handle_user_created(user_data)
                 return
             else:
@@ -499,15 +416,20 @@ def handle_user_updated(user_data):
         if data['phone_number'] is not None:
             user.phone_number = data['phone_number']
         
-        # Update the timestamp
-        user.updated_at = datetime.utcnow()
+        # Update username if provided
+        if data['username'] is not None:
+            user.username = data['username']
+            current_app.logger.info(f"Updated username to {data['username']} for user {user.clerk_user_id}")
+        
+        # Update the timestamp using Clerk's timestamp if available
+        user.updated_at = data['updated_at'] or datetime.now(timezone.utc)
         db.session.commit()
         
-        current_app.logger.info(f"Updated user from Clerk: {user.user_id} with Clerk ID {data['clerk_user_id']}")
+        current_app.logger.info(f"Updated user from Clerk: {user.clerk_user_id}")
         
-    except IntegrityError:
+    except IntegrityError as ie:
         db.session.rollback()
-        current_app.logger.error(f"Integrity error updating user from Clerk event")
+        current_app.logger.error(f"Integrity error updating user from Clerk event: {str(ie)}")
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error handling user.updated: {str(e)}")
@@ -525,11 +447,11 @@ def handle_user_deleted(user_data):
             current_app.logger.warning(f"User not found for deletion: Clerk ID {clerk_user_id}")
             return
             
-        # You might want to mark users as inactive rather than deleting them
+        # You might want to mark users as inactive rather than deleting them // not decided/can ignore
         # For example, add an 'is_active' field to your User model
         
         # For now, just log the deletion request
-        current_app.logger.info(f"Received deletion request for user {user.user_id} with Clerk ID {clerk_user_id}")
+        current_app.logger.info(f"Received deletion request for user with Clerk ID {clerk_user_id}")
         
         # If you want to actually delete:
         # db.session.delete(user)

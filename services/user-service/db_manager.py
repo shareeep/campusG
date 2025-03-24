@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Database initialization script for the user service
-Creates all tables defined in the models
+Creates the database if it doesn't exist and initializes all tables
 """
 
 import os
@@ -10,11 +10,53 @@ from datetime import datetime
 import psycopg2
 
 # Database connection details for Docker environment
-DB_HOST = 'postgres-user'
+DB_HOST = 'user-db'
 DB_PORT = '5432'
-DB_NAME = 'user_service_db'
+DB_NAME = 'user_service_db'  # Changed from user_db to user_service_db
 DB_USER = 'postgres'
 DB_PASSWORD = 'postgres'
+
+def create_database():
+    """Create the database if it doesn't exist"""
+    print(f"Checking if database {DB_NAME} exists...")
+    
+    # Connect to default 'postgres' database to create our target database
+    conn = None
+    cursor = None
+    
+    try:
+        # Connect to the default postgres database
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            dbname='postgres',  # Connect to default database
+            user=DB_USER,
+            password=DB_PASSWORD
+        )
+        conn.autocommit = True  # Need autocommit for database creation
+        cursor = conn.cursor()
+        
+        # Check if database exists
+        cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{DB_NAME}'")
+        exists = cursor.fetchone()
+        
+        if not exists:
+            print(f"Database {DB_NAME} does not exist. Creating it now...")
+            # Create database with proper encoding
+            cursor.execute(f"CREATE DATABASE {DB_NAME} WITH ENCODING 'UTF8'")
+            print(f"Database {DB_NAME} created successfully!")
+        else:
+            print(f"Database {DB_NAME} already exists.")
+        
+        return True
+    except Exception as e:
+        print(f"Error creating database: {str(e)}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def get_db_connection():
     """Create and return a database connection"""
@@ -28,9 +70,9 @@ def get_db_connection():
     conn.autocommit = False
     return conn
 
-def init_db():
+def init_tables():
     """Initialize the database with tables directly using SQL"""
-    print(f"Starting database initialization at {datetime.now().isoformat()}")
+    print(f"Starting table initialization at {datetime.now().isoformat()}")
     print(f"Connecting to database {DB_NAME} at {DB_HOST}:{DB_PORT}")
     
     conn = None
@@ -45,8 +87,8 @@ def init_db():
         print("Creating users table...")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                user_id VARCHAR(36) PRIMARY KEY,
-                clerk_user_id VARCHAR(255) UNIQUE,
+                clerk_user_id VARCHAR(255) PRIMARY KEY,
+                username VARCHAR(100) UNIQUE,
                 email VARCHAR(255) NOT NULL UNIQUE,
                 first_name VARCHAR(100) NOT NULL,
                 last_name VARCHAR(100) NOT NULL,
@@ -62,9 +104,9 @@ def init_db():
         # Create indexes
         print("Creating indexes...")
         cursor.execute("CREATE INDEX IF NOT EXISTS ix_users_email ON users(email);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_users_username ON users(username);")
         cursor.execute("CREATE INDEX IF NOT EXISTS ix_users_customer_rating ON users(customer_rating);")
         cursor.execute("CREATE INDEX IF NOT EXISTS ix_users_runner_rating ON users(runner_rating);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS ix_users_clerk_user_id ON users(clerk_user_id);")
         
         # Commit the transaction
         conn.commit()
@@ -73,7 +115,7 @@ def init_db():
     except Exception as e:
         if conn:
             conn.rollback()
-        print(f"Database initialization failed: {str(e)}")
+        print(f"Table initialization failed: {str(e)}")
         return 1
     finally:
         if cursor:
@@ -85,8 +127,12 @@ def init_db():
 
 def main():
     """Main entry point for the script"""
-    # Simplified to only handle initialization
-    return init_db()
+    # First make sure the database itself exists
+    if not create_database():
+        return 1
+    
+    # Then initialize tables
+    return init_tables()
 
 if __name__ == "__main__":
     sys.exit(main())
