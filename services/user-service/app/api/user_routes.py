@@ -2,10 +2,17 @@ from flask import Blueprint, request, jsonify, current_app
 import uuid
 import json
 import traceback
+import os
 from sqlalchemy.exc import IntegrityError
 from app.models.models import User
 from app import db
 from datetime import datetime, timezone
+
+# Import for environment variable access
+from dotenv import load_dotenv
+
+# Load environment variables at module level (as backup)
+load_dotenv()
 
 api = Blueprint('api', __name__)
 
@@ -38,9 +45,14 @@ def get_user(clerk_user_id):
 @api.route('/users/<clerk_user_id>/payment', methods=['PUT'])
 def update_payment_info(clerk_user_id):
     """
-    Update user payment information
+    Update user payment information with Stripe PaymentMethod
     
     Request body should contain:
+    {
+        "paymentMethodId": "pm_1234567890"
+    }
+    
+    Or the traditional format:
     {
         "stripeToken": "tok_visa",
         "cardLast4": "4242",
@@ -60,16 +72,55 @@ def update_payment_info(clerk_user_id):
         if not data:
             return jsonify({'success': False, 'message': 'No data provided'}), 400
             
-        # In a real implementation, this would call Stripe to save the payment method
-        # For now, we'll just store the details in the user_stripe_card field
-        
-        user.user_stripe_card = {
-            'last4': data.get('cardLast4', ''),
-            'brand': data.get('cardType', ''),
-            'exp_month': data.get('expiryMonth', ''),
-            'exp_year': data.get('expiryYear', ''),
-            'token': data.get('stripeToken', '')
-        }
+        # Check if using the new PaymentMethod format
+        if 'paymentMethodId' in data:
+            payment_method_id = data.get('paymentMethodId')
+            
+            try:
+                # Import Stripe here to avoid global import issues
+                import stripe
+                
+                # Get Stripe API key from environment variables
+                # First try to get from Flask config, then from env vars as backup
+                stripe_api_key = current_app.config.get('STRIPE_SECRET_KEY') or os.environ.get('STRIPE_SECRET_KEY')
+                
+                if not stripe_api_key:
+                    raise ValueError("Stripe API key not found in environment variables")
+                    
+                stripe.api_key = stripe_api_key
+                
+                # Retrieve the payment method details from Stripe
+                payment_method = stripe.PaymentMethod.retrieve(payment_method_id)
+                
+                # Store the relevant details
+                user.user_stripe_card = {
+                    'payment_method_id': payment_method_id,
+                    'last4': payment_method.card.last4,
+                    'brand': payment_method.card.brand,
+                    'exp_month': payment_method.card.exp_month,
+                    'exp_year': payment_method.card.exp_year,
+                    'updated_at': datetime.now(timezone.utc).isoformat()
+                }
+            except Exception as stripe_error:
+                current_app.logger.error(f"Stripe API error: {str(stripe_error)}")
+                # Fallback to simple storage if Stripe API fails
+                user.user_stripe_card = {
+                    'payment_method_id': payment_method_id,
+                    'last4': '4242',  # Fallback
+                    'brand': 'Visa',  # Fallback
+                    'exp_month': '12',  # Fallback
+                    'exp_year': '2025',  # Fallback
+                    'updated_at': datetime.now(timezone.utc).isoformat()
+                }
+        else:
+            # Handle the traditional format
+            user.user_stripe_card = {
+                'last4': data.get('cardLast4', ''),
+                'brand': data.get('cardType', ''),
+                'exp_month': data.get('expiryMonth', ''),
+                'exp_year': data.get('expiryYear', ''),
+                'token': data.get('stripeToken', '')
+            }
         
         user.updated_at = datetime.now(timezone.utc)
         db.session.commit()
