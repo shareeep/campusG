@@ -312,7 +312,7 @@ def cancel_acceptance():
         return jsonify({'error': 'Failed to cancel order acceptance'}), 500
 
 @api.route('/orders/<order_id>/status', methods=['PUT'])
-def update_order_status():
+def update_order_status_crud():
     """Update order status - simple CRUD without saga orchestration"""
     try:
         data = request.json
