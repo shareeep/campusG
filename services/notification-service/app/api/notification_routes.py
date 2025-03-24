@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models.models import Notification, NotificationStatus
 from app import db
 from app.services.kafka_service import kafka_client
@@ -44,7 +44,7 @@ def send_notification():
             order_id=order_id,
             event=event,
             status=NotificationStatus.CREATED,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         
         # Save to database
@@ -57,7 +57,7 @@ def send_notification():
         if send_success:
             # Update notification status
             notification.status = NotificationStatus.SENT
-            notification.sent_at = datetime.utcnow()
+            notification.sent_at = datetime.now(timezone.utc)
             db.session.commit()
         
         # Publish notification event to Kafka
@@ -124,7 +124,7 @@ def send_order_accepted_notification():
             order_id=order_id,
             event=event,
             status=NotificationStatus.CREATED,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         
         # Save to database
@@ -137,7 +137,7 @@ def send_order_accepted_notification():
         if send_success:
             # Update notification status
             notification.status = NotificationStatus.SENT
-            notification.sent_at = datetime.utcnow()
+            notification.sent_at = datetime.now(timezone.utc)
             db.session.commit()
         
         # Publish notification event to Kafka
@@ -214,7 +214,7 @@ def revert_notification():
             order_id=original_notification.order_id,
             event=event,
             status=NotificationStatus.CREATED,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         
         # Save to database
@@ -226,7 +226,7 @@ def revert_notification():
         
         if send_success:
             notification.status = NotificationStatus.SENT
-            notification.sent_at = datetime.utcnow()
+            notification.sent_at = datetime.now(timezone.utc)
             db.session.commit()
         
         # Publish notification reverted event to Kafka

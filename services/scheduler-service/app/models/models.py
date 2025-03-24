@@ -1,5 +1,5 @@
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 import uuid
 from sqlalchemy.dialects.postgresql import JSONB
@@ -27,8 +27,8 @@ class ScheduledEvent(db.Model):
     scheduled_time = db.Column(db.DateTime, nullable=False, index=True)
     processed = db.Column(db.Boolean, nullable=False, default=False, index=True)
     payload = db.Column(JSONB, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC))
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(datetime.UTC), onupdate=datetime.now(datetime.UTC))
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
     
     def __repr__(self):
         return f"<ScheduledEvent {self.scheduler_id}: {self.event_type.name} for {self.entity_id}>"

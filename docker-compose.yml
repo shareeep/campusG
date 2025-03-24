@@ -114,30 +114,30 @@ services:
       timeout: 5s
       retries: 5
 
-  # Kafka and Zookeeper
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.0
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
+  # Kafka and Zookeeper - DISABLED
+  # zookeeper:
+  #   image: confluentinc/cp-zookeeper:7.3.0
+  #   environment:
+  #     ZOOKEEPER_CLIENT_PORT: 2181
+  #     ZOOKEEPER_TICK_TIME: 2000
+  #   ports:
+  #     - "2181:2181"
 
-  kafka:
-    image: confluentinc/cp-kafka:7.3.0
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+  # kafka:
+  #   image: confluentinc/cp-kafka:7.3.0
+  #   depends_on:
+  #     - zookeeper
+  #   ports:
+  #     - "9092:9092"
+  #   environment:
+  #     KAFKA_BROKER_ID: 1
+  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  #     KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+  #     KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
 
   # Microservices
   user-service:
@@ -148,12 +148,10 @@ services:
         - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@user-db:5432/user_db
-      - KAFKA_BROKERS=kafka:29092
+      # - KAFKA_BROKERS=kafka:29092
     depends_on:
       user-db:
         condition: service_healthy
-      kafka:
-        condition: service_started
     ports:
       - "3001:3000"
 
@@ -162,7 +160,7 @@ services:
       context: ./services/order_service
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@order-db:5432/order_db
-      - KAFKA_BROKERS=kafka:29092
+      # - KAFKA_BROKERS=kafka:29092
       - USER_SERVICE_URL=http://user-service:3000
       - PAYMENT_SERVICE_URL=http://payment-service:3000
       - ESCROW_SERVICE_URL=http://escrow-service:3000
@@ -174,8 +172,6 @@ services:
     depends_on:
       order-db:
         condition: service_healthy
-      kafka:
-        condition: service_started
       user-service:
         condition: service_started
     ports:
@@ -189,14 +185,12 @@ services:
         - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@payment-db:5432/payment_db
-      - KAFKA_BROKERS=kafka:29092
+      # - KAFKA_BROKERS=kafka:29092
       - STRIPE_API_KEY=${STRIPE_API_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
     depends_on:
       payment-db:
         condition: service_healthy
-      kafka:
-        condition: service_started
     ports:
       - "3003:3000"
 
@@ -208,13 +202,11 @@ services:
         - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@escrow-db:5432/escrow_db
-      - KAFKA_BROKERS=kafka:29092
+      # - KAFKA_BROKERS=kafka:29092
       - PAYMENT_SERVICE_URL=http://payment-service:3000
     depends_on:
       escrow-db:
         condition: service_healthy
-      kafka:
-        condition: service_started
       payment-service:
         condition: service_started
     ports:
@@ -225,12 +217,10 @@ services:
       context: ./services/scheduler-service
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@scheduler-db:5432/scheduler_db
-      - KAFKA_BROKERS=kafka:29092
+      # - KAFKA_BROKERS=kafka:29092
     depends_on:
       scheduler-db:
         condition: service_healthy
-      kafka:
-        condition: service_started
     ports:
       - "3005:3000"
 
@@ -242,12 +232,10 @@ services:
         - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@notification-db:5432/notification_db
-      - KAFKA_BROKERS=kafka:29092
+      # - KAFKA_BROKERS=kafka:29092
     depends_on:
       notification-db:
         condition: service_healthy
-      kafka:
-        condition: service_started
     ports:
       - "3006:3000"
       
@@ -259,13 +247,11 @@ services:
         - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@timer-db:5432/timer_db
-      - KAFKA_BROKERS=kafka:29092
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      # - KAFKA_BROKERS=kafka:29092
+      # - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     depends_on:
       timer-db:
         condition: service_healthy
-      kafka:
-        condition: service_started
     ports:
       - "3007:3000"
 

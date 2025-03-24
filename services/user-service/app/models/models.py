@@ -9,6 +9,7 @@ class User(db.Model):
     __tablename__ = 'users'
 
     user_id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    clerk_user_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
     email = db.Column(db.String(255), nullable=False, unique=True, index=True)
     first_name = db.Column(db.String(100), nullable=False)
     last_name = db.Column(db.String(100), nullable=False)
@@ -26,6 +27,7 @@ class User(db.Model):
         """Convert the model to a dictionary"""
         data = {
             'userId': self.user_id,
+            'clerkUserId': self.clerk_user_id,
             'email': self.email,
             'firstName': self.first_name,
             'lastName': self.last_name,
