@@ -22,6 +22,7 @@ spec:
         ports:
         - containerPort: 3000
           name: http
+        # Updated env vars to match the simplified ConfigMap after saga refactoring
         env:
         - name: DATABASE_URL
           valueFrom:
@@ -33,31 +34,6 @@ spec:
             configMapKeyRef:
               name: order-service-config
               key: kafka_brokers
-        - name: USER_SERVICE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: order-service-config
-              key: user_service_url
-        - name: PAYMENT_SERVICE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: order-service-config
-              key: payment_service_url
-        - name: ESCROW_SERVICE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: order-service-config
-              key: escrow_service_url
-        - name: SCHEDULER_SERVICE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: order-service-config
-              key: scheduler_service_url
-        - name: NOTIFICATION_SERVICE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: order-service-config
-              key: notification_service_url
         - name: FLASK_APP
           value: "run.py"
         - name: FLASK_ENV

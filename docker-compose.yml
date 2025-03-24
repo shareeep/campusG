@@ -209,19 +209,14 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@order-db:5432/order_db
       # - KAFKA_BROKERS=kafka:29092
-      - USER_SERVICE_URL=http://user-service:3000
-      - PAYMENT_SERVICE_URL=http://payment-service:3000
-      - ESCROW_SERVICE_URL=http://escrow-service:3000
-      - SCHEDULER_SERVICE_URL=http://scheduler-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      # Service URLs removed as they're now only needed by saga orchestrators
+      # The Order Service now just performs CRUD operations and publishes events
       - FLASK_APP=run.py
       - FLASK_ENV=production
       - SECRET_KEY=${SECRET_KEY:-dev-key-please-change-in-production}
     depends_on:
       order-db:
         condition: service_healthy
-      user-service:
-        condition: service_started
     ports:
       - "3002:3000"
 
