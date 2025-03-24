@@ -6,22 +6,35 @@ CampusG is a microservices-based food delivery application designed for campus e
 
 The application follows a microservices architecture with the following components:
 
+### Core Services
+
 - **User Service**: Manages user accounts, authentication, and user data (TypeScript/Node.js)
-- **Order Service**: Handles order creation and lifecycle management (Python/Flask)
+- **Order Service**: Handles basic CRUD operations for orders (Python/Flask)
 - **Payment Service**: Processes payments via Stripe integration (TypeScript/Node.js)
 - **Escrow Service**: Manages fund holding and release (TypeScript/Node.js)
 - **Scheduler Service**: Handles time-based events and order timeouts (TypeScript/Node.js)
 - **Notification Service**: Sends notifications to users about order status changes (TypeScript/Node.js)
+- **Timer Service**: Manages timing-related operations (TypeScript/Node.js)
 
-Communication between services is handled through both HTTP APIs and Kafka message broker.
+### Saga Orchestrator Services
 
-## Key Workflows
+The application implements a decoupled saga orchestration pattern with dedicated microservices:
 
-The application implements three main saga patterns:
+- **Create Order Saga Orchestrator**: Manages the entire order creation workflow, including payment authorization and escrow placement (Python/Flask)
+- **Accept Order Saga Orchestrator**: Manages the runner assignment workflow (Python/Flask)
+- **Complete Order Saga Orchestrator**: Manages the order delivery and payment release workflow (Python/Flask)
 
-1. **Create Order Saga**: Order creation, payment authorization, and initial processing
-2. **Accept Order Saga**: Runner assignment and order acceptance 
-3. **Complete Order Saga**: Order delivery and payment completion
+Each Saga Orchestrator is a standalone composite microservice that:
+- Maintains its own state in a dedicated database
+- Coordinates multiple service calls to complete a business transaction
+- Handles compensation (rollback) logic when any step fails
+- Exposes APIs for initiating or querying saga processes
+
+### Communication Patterns
+
+Services communicate through:
+- Direct HTTP API calls for synchronous operations
+- Kafka events for asynchronous notifications
 
 ## Getting Started
 

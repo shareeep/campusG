@@ -1,10 +1,11 @@
 from flask import Blueprint, request, jsonify, current_app
 from app.models.models import Order, OrderStatus
 from app import db
-from app.sagas.create_order_saga import CreateOrderSaga
 from app.services.kafka_service import kafka_client
 import uuid
+import json
 from datetime import datetime
+from decimal import Decimal
 
 api = Blueprint('api', __name__)
 
@@ -49,48 +50,62 @@ def get_order_details():
         current_app.logger.error(f"Error getting order {order_id}: {str(e)}")
         return jsonify({'error': 'Failed to retrieve order'}), 500
 
-@api.route('/createOrder', methods=['POST'])
+@api.route('/orders', methods=['POST'])
 def create_order():
-    """Create a new order"""
+    """Create a new order - simple CRUD without saga orchestration"""
     try:
         data = request.json
         
         if not data:
             return jsonify({'error': 'No data provided'}), 400
             
-        customer_id = data.get('customerId')
-        order_details = data.get('orderDetails')
+        customer_id = data.get('customer_id')
+        order_details = data.get('order_details')
         
         if not customer_id or not order_details:
-            return jsonify({'error': 'Missing required fields: customerId or orderDetails'}), 400
-            
-        # Create and execute the saga
-        saga = CreateOrderSaga(customer_id, order_details)
-        result = saga.execute()
+            return jsonify({'error': 'Missing required fields: customer_id or order_details'}), 400
         
-        if not result['success']:
-            return jsonify({'error': result['error']}), 400
-            
-        # Get the created order
-        order = Order.query.get(result['order_id'])
+        # Calculate amounts
+        food_items = order_details.get('foodItems', [])
+        delivery_location = order_details.get('deliveryLocation', '')
         
-        # Publish order.created event
+        food_fee = calculate_food_total(food_items)
+        delivery_fee = calculate_delivery_fee(delivery_location)
+        
+        # Create a new order
+        order = Order(
+            order_id=str(uuid.uuid4()),
+            cust_id=customer_id,
+            order_description=json.dumps(food_items),
+            food_fee=food_fee,
+            delivery_fee=delivery_fee,
+            delivery_location=delivery_location,
+            order_status=OrderStatus.PENDING
+        )
+        
+        # Save to database
+        db.session.add(order)
+        db.session.commit()
+        
+        # Publish order created event
         kafka_client.publish('order-events', {
             'type': 'order.created',
             'payload': {
-                'orderId': order.id,
-                'customerId': order.cust_id,
+                'orderId': order.order_id,
+                'customerId': customer_id,
                 'timestamp': datetime.utcnow().isoformat()
             }
         })
         
         return jsonify({
-            'message': 'Order created successfully',
-            'order': order.to_dict()
+            'success': True,
+            'order_id': order.order_id,
+            'message': 'Order created successfully'
         }), 201
     except Exception as e:
+        db.session.rollback()
         current_app.logger.error(f"Error creating order: {str(e)}")
-        return jsonify({'error': 'Failed to create order'}), 500
+        return jsonify({'success': False, 'error': f"Failed to create order: {str(e)}"}), 500
 
 @api.route('/updateOrderStatus', methods=['POST'])
 def update_order_status():
@@ -148,17 +163,16 @@ def update_order_status():
         current_app.logger.error(f"Error updating order status: {str(e)}")
         return jsonify({'error': 'Failed to update order status'}), 500
 
-@api.route('/verifyAndAcceptOrder', methods=['POST'])
-def verify_and_accept_order():
-    """Verifies order availability and accepts it (runner)"""
+@api.route('/orders/<order_id>/accept', methods=['POST'])
+def accept_order():
+    """Accept an order - simple CRUD without saga orchestration"""
     try:
         data = request.json
         
-        if not data or 'orderId' not in data or 'runnerId' not in data:
-            return jsonify({'error': 'Missing required fields: orderId or runnerId'}), 400
+        if not data or 'runner_id' not in data:
+            return jsonify({'error': 'Missing required field: runner_id'}), 400
             
-        order_id = data['orderId']
-        runner_id = data['runnerId']
+        runner_id = data['runner_id']
         
         # Get the order
         order = Order.query.get(order_id)
@@ -167,37 +181,43 @@ def verify_and_accept_order():
             return jsonify({'error': 'Order not found'}), 404
             
         # Check if order is in the correct state
-        if order.order_status != OrderStatus.READY_FOR_PICKUP:
-            return jsonify({'error': f"Order cannot be accepted in status: {order.order_status.name}"}), 400
+        if order.order_status != OrderStatus.CREATED:
+            return jsonify({
+                'success': False, 
+                'error': f"Order cannot be accepted in status: {order.order_status.name}"
+            }), 400
             
         # Check if order already has a runner
         if order.runner_id:
-            return jsonify({'error': 'Order already accepted by another runner'}), 400
+            return jsonify({
+                'success': False, 
+                'error': 'Order already accepted by another runner'
+            }), 400
             
         # Update the order
         order.runner_id = runner_id
         order.order_status = OrderStatus.ACCEPTED
         db.session.commit()
         
-        # Here we would typically call the Accept Order Saga
-        # For now, we'll publish the order.accepted event
+        # Publish event
         kafka_client.publish('order-events', {
             'type': 'order.accepted',
             'payload': {
-                'orderId': order.id,
+                'orderId': order.order_id,
                 'runnerId': runner_id,
                 'timestamp': datetime.utcnow().isoformat()
             }
         })
         
         return jsonify({
+            'success': True,
             'message': 'Order accepted successfully',
-            'order': order.to_dict()
+            'order_id': order.order_id
         }), 200
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error accepting order: {str(e)}")
-        return jsonify({'error': 'Failed to accept order'}), 500
+        return jsonify({'success': False, 'error': f"Failed to accept order: {str(e)}"}), 500
 
 @api.route('/cancelOrder', methods=['POST'])
 def cancel_order():
@@ -291,16 +311,16 @@ def cancel_acceptance():
         current_app.logger.error(f"Error cancelling order acceptance: {str(e)}")
         return jsonify({'error': 'Failed to cancel order acceptance'}), 500
 
-@api.route('/completeOrder', methods=['POST'])
-def complete_order():
-    """Complete an order (delivered and payment captured)"""
+@api.route('/orders/<order_id>/status', methods=['PUT'])
+def update_order_status_crud():
+    """Update order status - simple CRUD without saga orchestration"""
     try:
         data = request.json
         
-        if not data or 'orderId' not in data:
-            return jsonify({'error': 'Missing orderId field'}), 400
+        if not data or 'status' not in data:
+            return jsonify({'error': 'Missing required field: status'}), 400
             
-        order_id = data['orderId']
+        status = data['status']
         
         # Get the order
         order = Order.query.get(order_id)
@@ -308,33 +328,49 @@ def complete_order():
         if not order:
             return jsonify({'error': 'Order not found'}), 404
             
-        # Check if order is in the right state
-        if order.order_status != OrderStatus.DELIVERED:
-            return jsonify({'error': f"Order cannot be completed in status: {order.order_status.name}"}), 400
+        # Validate and update the order status
+        try:
+            new_status = OrderStatus[status]
+        except KeyError:
+            return jsonify({'success': False, 'error': f"Invalid status: {status}"}), 400
             
         # Update the order
-        order.order_status = OrderStatus.COMPLETED
-        order.end_time = db.func.now()
+        order.order_status = new_status
+        if new_status == OrderStatus.COMPLETED:
+            order.end_time = db.func.now()
         db.session.commit()
         
-        # Publish order.completed event
+        # Publish order status updated event
         kafka_client.publish('order-events', {
-            'type': 'order.completed',
+            'type': 'order.statusUpdated',
             'payload': {
-                'orderId': order.id,
-                'customerId': order.cust_id,
-                'runnerId': order.runner_id,
+                'orderId': order.order_id,
+                'status': new_status.name,
                 'timestamp': datetime.utcnow().isoformat()
             }
         })
         
-        # Here we would typically call the Complete Order Saga
-        
         return jsonify({
-            'message': 'Order completed successfully',
-            'order': order.to_dict()
+            'success': True,
+            'message': 'Order status updated successfully',
+            'order_id': order.order_id
         }), 200
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error completing order: {str(e)}")
-        return jsonify({'error': 'Failed to complete order'}), 500
+        current_app.logger.error(f"Error updating order status: {str(e)}")
+        return jsonify({'success': False, 'error': f"Failed to update order status: {str(e)}"}), 500
+
+# Helper functions for calculating amounts
+def calculate_food_total(food_items):
+    """Calculate the food total"""
+    total = Decimal('0.00')
+    for item in food_items:
+        price = Decimal(str(item.get('price', 0)))
+        quantity = Decimal(str(item.get('quantity', 0)))
+        total += price * quantity
+    return total
+
+def calculate_delivery_fee(location):
+    """Calculate delivery fee based on location"""
+    # In a real implementation, this would use distance or zones
+    return Decimal('3.99')
