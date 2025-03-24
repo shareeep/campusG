@@ -1,6 +1,7 @@
+
 # Order Service (Flask Implementation)
 
-This service manages the lifecycle of orders in the CampusG food delivery application. It implements the saga pattern for order creation, acceptance, and completion.
+This service manages the lifecycle of orders in the CampusG food delivery application. It provides CRUD operations for orders and communicates with the saga orchestrator services.
 
 ## Technology Stack
 
@@ -9,6 +10,7 @@ This service manages the lifecycle of orders in the CampusG food delivery applic
 - **Messaging**: Kafka
 - **Container**: Docker
 - **Language**: Python 3.11
+- **API**: RESTful endpoints
 
 ## Directory Structure
 
@@ -25,9 +27,6 @@ services/order_service/
 │   ├── models/                # Database models
 │   │   ├── __init__.py
 │   │   └── models.py          # SQLAlchemy models
-│   ├── sagas/                 # Saga implementations
-│   │   ├── __init__.py
-│   │   └── create_order_saga.py # Create Order Saga
 │   ├── services/              # Business logic
 │   │   ├── __init__.py
 │   │   └── kafka_service.py   # Kafka integration
@@ -43,27 +42,28 @@ services/order_service/
 
 ## Key Components
 
-### Saga Pattern Implementation
+### Order Management
 
-The service implements the orchestration-based saga pattern to coordinate distributed transactions:
+This service provides basic CRUD operations for orders:
 
-1. **Create Order Saga** (`app/sagas/create_order_saga.py`)
-   - Orchestrates the creation of a new order
-   - Manages payment authorization
-   - Sets up escrow for funds
-   - Includes compensating transactions for error handling
+1. **Create**: Create new orders with customer information and order details
+2. **Read**: Retrieve order information and status
+3. **Update**: Update order status and details
+4. **Delete**: Cancel orders when needed
+
+The complex transaction management is handled by dedicated saga orchestrator services that call these CRUD endpoints.
 
 ### API Routes
 
 The service exposes RESTful endpoints in `app/api/routes.py`:
 
 - `GET /api/orders`: Get all orders with pagination
-- `GET /api/orders/<order_id>`: Get a specific order
+- `GET /api/getOrderDetails`: Get a specific order
 - `POST /api/orders`: Create a new order
-- `PATCH /api/orders/<order_id>/status`: Update an order's status
+- `PUT /api/orders/<order_id>/status`: Update an order's status
 - `POST /api/orders/<order_id>/accept`: Accept an order (runner)
-- `POST /api/orders/<order_id>/cancel`: Cancel an order
-- `POST /api/orders/<order_id>/complete`: Complete an order
+- `POST /api/cancelOrder`: Cancel an order
+- `POST /api/cancelAcceptance`: Cancel runner acceptance
 
 ### Database Models
 
