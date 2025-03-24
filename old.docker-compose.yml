@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: user_service_db
+      POSTGRES_DB: user_db
     volumes:
       - user_db_data:/var/lib/postgresql/data
     ports:
@@ -114,86 +114,46 @@ services:
       timeout: 5s
       retries: 5
 
-  create-order-saga-db:
-    image: postgres:14
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: create_order_saga_db
-    volumes:
-      - create_order_saga_db_data:/var/lib/postgresql/data
-    ports:
-      - "5439:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # Kafka and Zookeeper - DISABLED
+  # zookeeper:
+  #   image: confluentinc/cp-zookeeper:7.3.0
+  #   environment:
+  #     ZOOKEEPER_CLIENT_PORT: 2181
+  #     ZOOKEEPER_TICK_TIME: 2000
+  #   ports:
+  #     - "2181:2181"
 
-  accept-order-saga-db:
-    image: postgres:14
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: accept_order_saga_db
-    volumes:
-      - accept_order_saga_db_data:/var/lib/postgresql/data
-    ports:
-      - "5440:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  complete-order-saga-db:
-    image: postgres:14
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: complete_order_saga_db
-    volumes:
-      - complete_order_saga_db_data:/var/lib/postgresql/data
-    ports:
-      - "5441:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # kafka:
+  #   image: confluentinc/cp-kafka:7.3.0
+  #   depends_on:
+  #     - zookeeper
+  #   ports:
+  #     - "9092:9092"
+  #   environment:
+  #     KAFKA_BROKER_ID: 1
+  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  #     KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+  #     KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
 
   # Microservices
   user-service:
-    build: 
+    build:
       context: ./services/user-service
       dockerfile: Dockerfile
       args:
-        - REBUILD=2  # Increment this to force rebuild
+        - REBUILD=1
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@user-db:5432/user_service_db
-      DB_HOST: user-db
-      DB_PORT: 5432
-      DB_NAME: user_service_db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      PORT: 3000
-    env_file:
-      - ./.env
+      - DATABASE_URL=postgresql://postgres:postgres@user-db:5432/user_db
+      # - KAFKA_BROKERS=kafka:29092
     depends_on:
       user-db:
         condition: service_healthy
     ports:
       - "3001:3000"
-    volumes:
-      - ./services/user-service:/app
-      - ./.env:/app/.env
-    # Add healthcheck for the service
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
   order-service:
     build:
@@ -201,14 +161,19 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@order-db:5432/order_db
       # - KAFKA_BROKERS=kafka:29092
-      # Service URLs removed as they're now only needed by saga orchestrators
-      # The Order Service now just performs CRUD operations and publishes events
+      - USER_SERVICE_URL=http://user-service:3000
+      - PAYMENT_SERVICE_URL=http://payment-service:3000
+      - ESCROW_SERVICE_URL=http://escrow-service:3000
+      - SCHEDULER_SERVICE_URL=http://scheduler-service:3000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
       - FLASK_APP=run.py
       - FLASK_ENV=production
       - SECRET_KEY=${SECRET_KEY:-dev-key-please-change-in-production}
     depends_on:
       order-db:
         condition: service_healthy
+      user-service:
+        condition: service_started
     ports:
       - "3002:3000"
 
@@ -290,88 +255,6 @@ services:
     ports:
       - "3007:3000"
 
-  # Saga Orchestrator Services
-  create-order-saga-orchestrator:
-    build:
-      context: ./services/create-order-saga-orchestrator
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@create-order-saga-db:5432/create_order_saga_db
-      - USER_SERVICE_URL=http://user-service:3000
-      - ORDER_SERVICE_URL=http://order-service:3000
-      - PAYMENT_SERVICE_URL=http://payment-service:3000
-      - ESCROW_SERVICE_URL=http://escrow-service:3000
-      - SCHEDULER_SERVICE_URL=http://scheduler-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
-      - FLASK_APP=run.py
-      - FLASK_ENV=production
-    depends_on:
-      create-order-saga-db:
-        condition: service_healthy
-      user-service:
-        condition: service_started
-      order-service:
-        condition: service_started
-      payment-service:
-        condition: service_started
-      escrow-service:
-        condition: service_started
-      scheduler-service:
-        condition: service_started
-      notification-service:
-        condition: service_started
-    ports:
-      - "3101:3000"
-
-  accept-order-saga-orchestrator:
-    build:
-      context: ./services/accept-order-saga-orchestrator
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@accept-order-saga-db:5432/accept_order_saga_db
-      - USER_SERVICE_URL=http://user-service:3000
-      - ORDER_SERVICE_URL=http://order-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
-      - FLASK_APP=run.py
-      - FLASK_ENV=production
-    depends_on:
-      accept-order-saga-db:
-        condition: service_healthy
-      user-service:
-        condition: service_started
-      order-service:
-        condition: service_started
-      notification-service:
-        condition: service_started
-    ports:
-      - "3102:3000"
-
-  complete-order-saga-orchestrator:
-    build:
-      context: ./services/complete-order-saga-orchestrator
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@complete-order-saga-db:5432/complete_order_saga_db
-      - USER_SERVICE_URL=http://user-service:3000
-      - ORDER_SERVICE_URL=http://order-service:3000
-      - PAYMENT_SERVICE_URL=http://payment-service:3000
-      - ESCROW_SERVICE_URL=http://escrow-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
-      - FLASK_APP=run.py
-      - FLASK_ENV=production
-    depends_on:
-      complete-order-saga-db:
-        condition: service_healthy
-      user-service:
-        condition: service_started
-      order-service:
-        condition: service_started
-      payment-service:
-        condition: service_started
-      escrow-service:
-        condition: service_started
-      notification-service:
-        condition: service_started
-    ports:
-      - "3103:3000"
-
   # # Frontend
   # frontend:
   #   build:
@@ -395,6 +278,3 @@ volumes:
   scheduler_db_data:
   notification_db_data:
   timer_db_data:
-  create_order_saga_db_data:
-  accept_order_saga_db_data:
-  complete_order_saga_db_data:

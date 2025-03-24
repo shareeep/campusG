@@ -17,11 +17,12 @@ COPY . .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV PORT=3000
 
 # Create database migrations directory if it doesn't exist
 RUN mkdir -p migrations
 
 EXPOSE 3000
 
-# Command to run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "run:app"]
+# Use a more robust command that ensures correct binding
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--log-level", "debug", "--timeout", "120", "run:app"]
