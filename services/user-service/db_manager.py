@@ -16,6 +16,18 @@ DB_NAME = 'user_service_db'
 DB_USER = 'postgres'
 DB_PASSWORD = 'postgres'
 
+def get_db_connection():
+    """Create and return a database connection"""
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+    conn.autocommit = False
+    return conn
+
 def init_db():
     """Initialize the database with tables directly using SQL"""
     print(f"Starting database initialization at {datetime.now().isoformat()}")
@@ -26,14 +38,7 @@ def init_db():
     
     try:
         # Connect to the database
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        )
-        conn.autocommit = False
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Create the users table
@@ -78,5 +83,10 @@ def init_db():
         
     return 0
 
+def main():
+    """Main entry point for the script"""
+    # Simplified to only handle initialization
+    return init_db()
+
 if __name__ == "__main__":
-    sys.exit(init_db())
+    sys.exit(main())
