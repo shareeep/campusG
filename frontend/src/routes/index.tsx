@@ -9,6 +9,7 @@ import { RestaurantsPage } from '@/pages/restaurants';
 import { BecomeRunnerPage } from '@/pages/become-runner';
 import { OrderFormPage } from '@/pages/customer/order-form';
 import { AvailableOrdersPage } from '@/pages/runner/available-orders';
+import PaymentSettingsPage from '@/pages/payment-settings';
 
 export function AppRoutes() {
   return (
@@ -67,6 +68,19 @@ export function AppRoutes() {
             <>
               <SignedIn>
                 <AvailableOrdersPage />
+              </SignedIn>
+              <SignedOut>
+                <RedirectToSignIn />
+              </SignedOut>
+            </>
+          }
+        />
+        <Route
+          path="/payment-settings"
+          element={
+            <>
+              <SignedIn>
+                <PaymentSettingsPage />
               </SignedIn>
               <SignedOut>
                 <RedirectToSignIn />

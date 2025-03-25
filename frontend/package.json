@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.0.0",
+    "@stripe/react-stripe-js": "^3.5.1",
+    "@stripe/stripe-js": "^6.1.0",
     "@supabase/supabase-js": "^2.39.7",
     "campus-food-delivery": "file:",
     "clsx": "^2.1.0",
