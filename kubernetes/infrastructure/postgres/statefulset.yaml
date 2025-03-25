@@ -26,7 +26,7 @@ spec:
         - name: POSTGRES_PASSWORD
           value: "postgres"  # In production, use a Secret instead
         - name: POSTGRES_MULTIPLE_DATABASES
-          value: "user_db,order_db,payment_db,escrow_db,scheduler_db,notification_db"
+          value: "user_service_db,order_db,payment_db,escrow_db,scheduler_db,notification_db"
         volumeMounts:
         - name: postgres-data
           mountPath: /var/lib/postgresql/data
