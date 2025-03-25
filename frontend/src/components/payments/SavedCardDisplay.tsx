@@ -1,4 +1,4 @@
-import { CreditCard, Trash2 } from 'lucide-react';
+import { CreditCard, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface SavedCardDisplayProps {
@@ -7,6 +7,7 @@ interface SavedCardDisplayProps {
   expiryMonth?: string;
   expiryYear?: string;
   onDelete?: () => void;
+  isDeleting?: boolean;
 }
 
 export function SavedCardDisplay({ 
@@ -14,7 +15,8 @@ export function SavedCardDisplay({
   brand = 'Card', 
   expiryMonth = '••', 
   expiryYear = '••',
-  onDelete 
+  onDelete,
+  isDeleting = false
 }: SavedCardDisplayProps) {
   return (
     <div className="flex items-center justify-between p-4 border rounded-md">
@@ -35,9 +37,14 @@ export function SavedCardDisplay({
           variant="ghost" 
           size="sm" 
           onClick={onDelete}
+          disabled={isDeleting}
           className="text-gray-500 hover:text-red-600"
         >
-          <Trash2 className="h-4 w-4" />
+          {isDeleting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
           <span className="sr-only">Delete Card</span>
         </Button>
       )}

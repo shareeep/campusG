@@ -160,6 +160,37 @@ def get_payment_info(clerk_user_id):
         current_app.logger.error(f"Error retrieving payment info for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to retrieve payment information: {str(e)}"}), 500
 
+@api.route('/user/<clerk_user_id>/payment', methods=['DELETE'])
+def delete_payment_info(clerk_user_id):
+    """
+    Delete a user's payment information
+    
+    This endpoint removes the stored payment method for a user.
+    """
+    try:
+        user = User.query.get(clerk_user_id)
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+        if not user.user_stripe_card:
+            return jsonify({'success': False, 'message': 'User has no payment method to delete'}), 400
+            
+        # Clear the payment information
+        user.user_stripe_card = None
+        user.updated_at = datetime.now(timezone.utc)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Payment information deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error deleting payment info for user {clerk_user_id}: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to delete payment information: {str(e)}"}), 500
+
 @api.route('/user/<clerk_user_id>/update-customer-rating', methods=['POST'])
 def update_customer_rating(clerk_user_id):
     """

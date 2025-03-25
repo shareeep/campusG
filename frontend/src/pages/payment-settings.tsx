@@ -80,11 +80,32 @@ export default function PaymentSettingsPage() {
     if (!user) return;
     
     try {
-      // In a real implementation, you would call your backend to remove the payment method
-      // For now, we'll just remove it locally
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch(
+        `http://localhost:3001/api/user/${user.id}/payment`,
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to delete payment method');
+      }
+      
+      // Successfully deleted - clear the payment method from state
       setPaymentMethod(null);
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete payment method');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -109,6 +130,7 @@ export default function PaymentSettingsPage() {
               expiryMonth={paymentMethod.exp_month}
               expiryYear={paymentMethod.exp_year}
               onDelete={deletePaymentMethod}
+              isDeleting={loading}
             />
           </div>
         )}
