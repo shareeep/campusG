@@ -16,7 +16,7 @@ load_dotenv()
 
 api = Blueprint('api', __name__)
 
-@api.route('/users/<clerk_user_id>', methods=['GET'])
+@api.route('/user/<clerk_user_id>', methods=['GET'])
 def get_user(clerk_user_id):
     """
     Get user information by ID
@@ -42,7 +42,7 @@ def get_user(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to retrieve user: {str(e)}"}), 500
 
 
-@api.route('/users/<clerk_user_id>/payment', methods=['PUT'])
+@api.route('/user/<clerk_user_id>/payment', methods=['PUT'])
 def update_payment_info(clerk_user_id):
     """
     Update user payment information with Stripe PaymentMethod
@@ -135,7 +135,7 @@ def update_payment_info(clerk_user_id):
         current_app.logger.error(f"Error updating payment info for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update payment information: {str(e)}"}), 500
 
-@api.route('/users/<clerk_user_id>/payment-info', methods=['GET'])
+@api.route('/user/<clerk_user_id>/payment', methods=['GET'])
 def get_payment_info(clerk_user_id):
     """
     Get user's payment information
@@ -160,7 +160,7 @@ def get_payment_info(clerk_user_id):
         current_app.logger.error(f"Error retrieving payment info for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to retrieve payment information: {str(e)}"}), 500
 
-@api.route('/users/<clerk_user_id>/update-customer-rating', methods=['POST'])
+@api.route('/user/<clerk_user_id>/update-customer-rating', methods=['POST'])
 def update_customer_rating(clerk_user_id):
     """
     Update the customer rating
@@ -196,7 +196,7 @@ def update_customer_rating(clerk_user_id):
         current_app.logger.error(f"Error updating customer rating for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update customer rating: {str(e)}"}), 500
 
-@api.route('/users/<clerk_user_id>/update-runner-rating', methods=['POST'])
+@api.route('/user/<clerk_user_id>/update-runner-rating', methods=['POST'])
 def update_runner_rating(clerk_user_id):
     """
     Update the runner rating
@@ -232,7 +232,7 @@ def update_runner_rating(clerk_user_id):
         current_app.logger.error(f"Error updating runner rating for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update runner rating: {str(e)}"}), 500
 
-@api.route('/list-users', methods=['GET'])
+@api.route('/user/list-users', methods=['GET'])
 def list_user_ids():
     """
     Get a list of all user IDs

@@ -2,6 +2,7 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_cors import CORS
 import os
 import logging
 import sys
@@ -21,6 +22,23 @@ def create_app():
     # Configure the app
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@user-db:5432/user_service_db')  # Updated database name
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    # Configure CORS
+    # Allow requests from your frontend development server
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": [
+                "http://localhost:5173",  # Vite dev server
+                "http://localhost:3000",   # Next.js dev server
+                "http://127.0.0.1:5173",
+                "http://127.0.0.1:3000",
+                # Add your production domain when deployed
+            ],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"]
+        }
+    })
+    logger.info("CORS configured for API routes")
 
     # Initialize extensions
     db.init_app(app)

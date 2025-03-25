@@ -25,7 +25,7 @@ export default function PaymentSettingsPage() {
       if (!isLoaded || !user) return;
       
       try {
-        const response = await fetch(`/api/users/${user.id}/payment-info`);
+        const response = await fetch(`http://localhost:3001/api/user/${user.id}/payment`);
         const data = await response.json();
         
         if (data.success) {
@@ -46,13 +46,16 @@ export default function PaymentSettingsPage() {
     if (!user) return;
     
     try {
-      const response = await fetch(`/api/users/${user.id}/payment`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ paymentMethodId }),
-      });
+      const response = await fetch(
+        `http://localhost:3001/api/user/${user.id}/payment`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ paymentMethodId }),
+        }
+      );
       
       const data = await response.json();
       
@@ -61,7 +64,7 @@ export default function PaymentSettingsPage() {
       }
       
       // Refresh payment method data
-      const refreshResponse = await fetch(`/api/users/${user.id}/payment-info`);
+      const refreshResponse = await fetch(`http://localhost:3001/api/user/${user.id}/payment`);
       const refreshData = await refreshResponse.json();
       
       if (refreshData.success) {
