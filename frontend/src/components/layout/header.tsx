@@ -1,4 +1,4 @@
-import { ShoppingBag, User } from 'lucide-react';
+import { ShoppingBag, CreditCard } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,12 @@ export function Header() {
             </Link>
             <Link to="/runner/available-orders" className="text-sm font-medium hover:text-blue-600">
               Runner Dashboard
+            </Link>
+            <Link to="/payment-settings" className="text-sm font-medium hover:text-blue-600">
+              <div className="flex items-center gap-1">
+                <CreditCard className="h-4 w-4" />
+                <span>Payment Settings</span>
+              </div>
             </Link>
             <UserButton afterSignOutUrl="/" />
           </SignedIn>

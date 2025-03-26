@@ -12,7 +12,7 @@ import psycopg2
 # Database connection details for Docker environment
 DB_HOST = 'user-db'
 DB_PORT = '5432'
-DB_NAME = 'user_service_db'  # Changed from user_db to user_service_db
+DB_NAME = 'user_service_db'
 DB_USER = 'postgres'
 DB_PASSWORD = 'postgres'
 
