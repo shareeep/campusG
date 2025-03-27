@@ -2,6 +2,7 @@ from app import db
 from datetime import datetime, timezone
 import enum
 import uuid
+from sqlalchemy import Enum as SQLAlchemyEnum
 
 class OrderStatus(enum.Enum):
     """Order status enum"""
@@ -25,7 +26,7 @@ class Order(db.Model):
     food_fee = db.Column(db.Numeric(5, 2), nullable=False)
     delivery_fee = db.Column(db.Numeric(5, 2), nullable=False)
     delivery_location = db.Column(db.String(255), nullable=False)
-    order_status = db.Column(db.Enum(OrderStatus), nullable=False, default=OrderStatus.PENDING, index=True)
+    order_status = db.Column(SQLAlchemyEnum(OrderStatus, native_enum=False), nullable=False, default=OrderStatus.PENDING, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime, nullable=True)
