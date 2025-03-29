@@ -239,8 +239,10 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@payment-db:5432/payment_db
       # - KAFKA_BROKERS=kafka:29092
-      - STRIPE_API_KEY=${STRIPE_API_KEY}
+      - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+    env_file:
+      - ./.env
     depends_on:
       payment-db:
         condition: service_healthy
