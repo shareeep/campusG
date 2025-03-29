@@ -240,49 +240,6 @@ def accept_order():
         current_app.logger.error(f"Error accepting order: {str(e)}", exc_info=True)
         return jsonify({'error': f"Failed to accept order: {str(e)}"}), 500
 
-# @api.route('/cancelOrder', methods=['POST'])
-# def cancel_order():
-#     """Cancel an order"""
-#     try:
-#         data = request.json
-        
-#         if not data or 'orderId' not in data:
-#             return jsonify({'error': 'Missing orderId field'}), 400
-            
-#         order_id = data['orderId']
-        
-#         # Get the order
-#         order = Order.query.get(order_id)
-        
-#         if not order:
-#             return jsonify({'error': 'Order not found'}), 404
-            
-#         # Check if order can be cancelled
-#         if order.order_status in [OrderStatus.DELIVERED, OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.TIMED_OUT]:
-#             return jsonify({'error': f"Order cannot be cancelled in status: {order.order_status.name}"}), 400
-            
-#         # Update the order
-#         order.order_status = OrderStatus.CANCELLED
-#         db.session.commit()
-        
-#         # Publish order.cancelled event
-#         kafka_client.publish('order-events', {
-#             'type': 'order.cancelled',
-#             'payload': {
-#                 'orderId': order.order_id,
-#                 'previousStatus': order.order_status.name,
-#                 'timestamp': datetime.utcnow().isoformat()
-#             }
-#         })
-        
-#         return jsonify({
-#             'message': 'Order cancelled successfully',
-#             'order': order.to_dict()
-#         }), 200
-#     except Exception as e:
-#         db.session.rollback()
-#         current_app.logger.error(f"Error cancelling order: {str(e)}")
-#         return jsonify({'error': 'Failed to cancel order'}), 500
 
 @api.route('/cancelOrder', methods=['POST'])
 def cancel_order():
@@ -312,9 +269,8 @@ def cancel_order():
         if not order:
             return jsonify({'error': 'Order not found'}), 404
 
-        # Check if the order can be cancelled
-        # For example, if the order is already delivered, completed, or cancelled, we disallow cancellation.
-        if order.order_status in [OrderStatus.DELIVERED, OrderStatus.COMPLETED, OrderStatus.CANCELLED]:
+        # Business logic: the order can be cancelled only if its status is CREATED.
+        if order.order_status != OrderStatus.CREATED:
             return jsonify({'error': f"Order cannot be cancelled in status: {order.order_status.name}"}), 400
 
         # Update the order's status to CANCELLED
@@ -342,36 +298,50 @@ def cancel_order():
         return jsonify({'error': f"Failed to cancel order: {str(e)}"}), 500
 
 
-@api.route('/cancelAcceptance', methods=['POST'])
+@api.route('/orders/cancelAcceptance', methods=['POST'])
 def cancel_acceptance():
-    """Reverts acceptance of an order (runner cancels)"""
+    """
+    Runner cancels their acceptance of an order.
+    
+    Expected JSON input:
+    {
+        "orderId": "order-uuid"
+    }
+    
+    Returns:
+    {
+        "message": "Order acceptance cancelled successfully",
+        "order": {order object}
+    }
+    """
     try:
         data = request.json
-        
         if not data or 'orderId' not in data:
-            return jsonify({'error': 'Missing orderId field'}), 400
-            
+            return jsonify({'error': 'Missing required field: orderId'}), 400
+
         order_id = data['orderId']
         
-        # Get the order
+        # Retrieve the order from the database
         order = Order.query.get(order_id)
-        
         if not order:
             return jsonify({'error': 'Order not found'}), 404
-            
-        # Check if order is in ACCEPTED state
+
+        # Ensure the order is currently in the ACCEPTED state
         if order.order_status != OrderStatus.ACCEPTED:
-            return jsonify({'error': f"Order cannot have acceptance cancelled in status: {order.order_status.name}"}), 400
-            
-        # Store runner_id before clearing it for the event
+            return jsonify({
+                'error': f"Order cannot have acceptance cancelled in status: {order.order_status.name}"
+            }), 400
+
+        # Store the current runner_id for event logging
         runner_id = order.runner_id
-        
-        # Update the order
+
+        # Cancel the acceptance: clear runner_id and revert order status to CREATED (or a different valid status)
         order.runner_id = None
-        order.order_status = OrderStatus.READY_FOR_PICKUP
+        order.order_status = OrderStatus.CREATED
+
         db.session.commit()
-        
-        # Publish order.acceptanceCancelled event
+
+        # Publish a Kafka event indicating the cancellation of acceptance
         kafka_client.publish('order-events', {
             'type': 'order.acceptanceCancelled',
             'payload': {
@@ -380,15 +350,17 @@ def cancel_acceptance():
                 'timestamp': datetime.utcnow().isoformat()
             }
         })
-        
+
         return jsonify({
             'message': 'Order acceptance cancelled successfully',
             'order': order.to_dict()
         }), 200
+
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error cancelling order acceptance: {str(e)}")
-        return jsonify({'error': 'Failed to cancel order acceptance'}), 500
+        current_app.logger.error(f"Error cancelling order acceptance: {str(e)}", exc_info=True)
+        return jsonify({'error': f"Failed to cancel order acceptance: {str(e)}"}), 500
+
 
 @api.route('/completeOrder', methods=['POST'])
 def complete_order():
