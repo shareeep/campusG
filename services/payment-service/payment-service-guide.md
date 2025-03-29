@@ -11,6 +11,7 @@
 7. [Integration with Other Services](#integration-with-other-services)
 8. [Stripe Integration](#stripe-integration)
 9. [Troubleshooting](#troubleshooting)
+10. [Monitoring Payments](#monitoring-payments)
 
 ## Introduction
 
@@ -146,6 +147,10 @@ Authorizes a payment from a customer and holds it in escrow until the order is c
       "payment_method_id": "pm_1R7xF8QR8BO665MwbdEmL3Pz"
     }
   },
+  "order": {
+    "amount": 2098,
+    "description": "Order with ID order_123abc - CampusG Escrow"
+  },
   "custpaymentId": "optional_custom_payment_id"
 }
 ```
@@ -160,6 +165,10 @@ curl -X POST http://localhost:3003/api/payment/order_123abc/authorize \
       "userStripeCard": {
         "payment_method_id": "pm_1R7xF8QR8BO665MwbdEmL3Pz"
       }
+    },
+    "order": {
+      "amount": 2098,
+      "description": "Order order_123abc - CampusG Escrow"
     }
   }'
 ```
@@ -274,6 +283,82 @@ This endpoint expects a raw request body from Stripe with a signature in the hea
 
 **Response:** 200 OK with empty body for successful processing.
 
+### 5. Check Payment Status
+
+Retrieves the status and details of a payment for a specific order.
+
+**Endpoint:** `GET /api/payment/{order_id}/status`
+
+**Sample Request (cURL):**
+```bash
+curl -X GET http://localhost:3003/api/payment/order_123abc/status
+```
+
+**Successful Response (200 OK):**
+```json
+{
+  "success": true,
+  "payment": {
+    "paymentId": "payment_abc123",
+    "orderId": "order_123abc",
+    "customerId": "user_2uFnauOsxFRGIoy3O5CJA6v5sM6",
+    "runnerId": "user_456",
+    "amount": 20.98,
+    "status": "AUTHORIZED",
+    "description": "Order order_123abc - CampusG Escrow",
+    "paymentIntentId": "pi_abc123",
+    "createdAt": "2025-03-29T11:08:03.326151+00:00",
+    "updatedAt": "2025-03-29T11:08:03.326151+00:00"
+  }
+}
+```
+
+**Error Response (404 Not Found):**
+```json
+{
+  "success": false,
+  "description": "Payment not found"
+}
+```
+
+### 6. Get Payment Details
+
+Retrieves detailed information about a specific payment using the payment ID.
+
+**Endpoint:** `GET /api/payment/{payment_id}/details`
+
+**Sample Request (cURL):**
+```bash
+curl -X GET http://localhost:3003/api/payment/payment_abc123/details
+```
+
+**Successful Response (200 OK):**
+```json
+{
+  "success": true,
+  "payment": {
+    "paymentId": "payment_abc123",
+    "orderId": "order_123abc",
+    "customerId": "user_2uFnauOsxFRGIoy3O5CJA6v5sM6",
+    "runnerId": "user_456",
+    "amount": 20.98,
+    "status": "AUTHORIZED",
+    "description": "Order order_123abc - CampusG Escrow",
+    "paymentIntentId": "pi_abc123",
+    "createdAt": "2025-03-29T11:08:03.326151+00:00",
+    "updatedAt": "2025-03-29T11:08:03.326151+00:00"
+  }
+}
+```
+
+**Error Response (404 Not Found):**
+```json
+{
+  "success": false,
+  "description": "Payment not found"
+}
+```
+
 ## Testing Guide
 
 ### Prerequisites
@@ -345,6 +430,10 @@ curl -X POST http://localhost:3003/api/payment/order_abc123/authorize \
       "userStripeCard": {
         "payment_method_id": "pm_1R7xF8QR8BO665MwbdEmL3Pz"
       }
+    },
+    "order": {
+      "amount": 2098,
+      "description": "Order order_abc123 - CampusG Escrow"
     }
   }'
 ```
@@ -409,36 +498,104 @@ For testing payments, use Stripe's test cards:
 | 4000 0000 0000 9995 | Payment requires authentication |
 | 4000 0000 0000 0002 | Payment declined |
 
-For any test card, use:
-- Any future expiration date (e.g., 12/25)
-- Any 3-digit CVC code
-- Any ZIP code
+| Visa | 4242 4242 4242 4242 |
+| Mastercard | 5555 5555 5555 4444 |
+| American Express | 3782 822463 10005 |
+| Discover | 6011 1111 1111 1117 |
+
+| Scenario | Card Number |
+|----------|-------------|
+| Declined card | 4000 0000 0000 0002 |
+| Insufficient funds | 4000 0000 0000 9995 | [appears to be same as above]
+| Requiring authentication | 4000 0000 0000 3220 |
+
+For all test cards, use:
+* Any future expiration date (MM/YY)
+* Any 3-digit CVC (4 digits for Amex)
+* Any ZIP code
+
+---
+*This is for testing purposes only*
+
+### Monitoring Test Payments
+
+When using test cards, the transactions won't appear on actual credit card statements. Here's how to track and verify test payments:
+
+#### 1. Using the Payment Service API
+
+To check the status of a payment via the API:
+
+```bash
+# Check by order ID
+curl -X GET http://localhost:3003/api/payment/order_abc123/status
+
+# Check by payment ID
+curl -X GET http://localhost:3003/api/payment/payment_abc123/details
+```
+
+#### 2. Using the Stripe Dashboard
+
+All test payments are visible in the Stripe Dashboard:
+
+1. **Log in to Stripe Dashboard**: https://dashboard.stripe.com/test/dashboard
+2. **Navigate to Payments**: Click "Payments" in the left sidebar
+3. **View Payment Details**: All test payments will be listed here with their status
+4. **View Payment Intent Details**: Click on any payment to see full details including:
+   - Status (requires capture, succeeded, canceled)
+   - Amount
+   - Payment method
+   - Metadata with order ID and customer ID
+   - Timeline of events
+
+#### 3. Using Stripe CLI
+
+You can also use the Stripe CLI to monitor payments:
+
+```bash
+# List recent payment intents
+stripe payment_intents list -l 10
+
+# Get details of a specific payment intent
+stripe payment_intents retrieve pi_1234567890
+```
+
+#### 4. Using Stripe Events
+
+To monitor webhook events during testing:
+
+```bash
+# Stream events in real-time
+stripe listen
+
+# Stream events and forward to your local server
+stripe listen --forward-to localhost:3003/api/stripe-webhook
+```
+
+This will show all events (payment created, succeeded, failed, etc.) in real-time.
 
 ## Integration with Other Services
 
-The Payment Service integrates with several other services in the CampusG platform:
+The Payment Service interacts with other microservices in the CampusG platform, primarily:
 
-### User Service Integration
+1. **User Service**: The payment service relies on user data passed in API requests rather than making direct calls to the User Service.
 
-- **Purpose**: Retrieves payment methods stored for users
-- **Endpoint Used**: `GET /api/user/{clerk_user_id}/payment`
-- **Data Exchanged**: Payment method IDs and card details
+2. **Order Service**: Similarly, order details are passed directly in API requests rather than being fetched by the Payment Service.
 
-### Order Service Integration
+### Data Flow
 
-- **Purpose**: Gets order details including amount to be charged
-- **Implementation**: The payment service will fetch order details to determine payment amount
-- **Note**: In the current implementation, this is mocked for testing purposes
+The Payment Service follows a request-based integration model:
 
-### Kafka Event Integration
+1. **Client Applications**:
+   - Collect necessary order data from the Order Service
+   - Collect user payment details from the User Service
+   - Pass all required data in payment API requests
 
-The payment service publishes events to Kafka for other services to consume:
+2. **Payment Service**:
+   - Processes payment operations based on provided data
+   - No direct calls to other services are made
+   - Publishes payment events to Kafka for asynchronous communication
 
-| Event | Topic | Description |
-|-------|-------|-------------|
-| `payment.authorized` | payment-events | When a payment is authorized and held in escrow |
-| `payment.released` | payment-events | When funds are released to a runner |
-| `payment.reverted` | payment-events | When a payment is canceled or refunded |
+This approach reduces inter-service dependencies and improves system resilience.
 
 ## Stripe Integration
 
@@ -449,6 +606,27 @@ The Payment Service uses Stripe as the payment processor, specifically using:
 1. **Payment Intents API**: For securely processing payments
 2. **Manual Capture Feature**: To implement escrow functionality
 3. **Webhooks**: To receive asynchronous events from Stripe
+
+### Escrow Implementation Details
+
+The payment service implements escrow functionality using Stripe's features rather than maintaining a separate CampusG bank account:
+
+1. **Authorization Phase**:
+   - When a customer pays, funds are authorized on their card using Stripe's `capture_method="manual"`
+   - This reserves the funds without transferring them yet
+   - The authorization appears as "pending" on the customer's statement
+
+2. **Release Phase**:
+   - When an order completes successfully, the system captures the previously authorized payment
+   - This finalizes the transaction through Stripe's payment network
+   - Funds are then distributed to the runner according to platform rules
+
+3. **Revert Phase**:
+   - If an order is canceled, the system cancels the payment intent
+   - This releases the hold on the customer's funds without any actual transfer
+   - No actual money movement occurs in this case
+
+This approach provides all the security benefits of an escrow system without requiring CampusG to handle funds directly.
 
 ### Key Integration Points
 
@@ -471,6 +649,37 @@ The service processes the following Stripe webhook events:
 1. `payment_intent.succeeded`: Payment was successfully processed
 2. `payment_intent.canceled`: Payment was canceled
 3. `payment_intent.payment_failed`: Payment processing failed
+
+### Getting Your Stripe Webhook Secret
+
+To obtain a webhook secret for your payment service:
+
+1. **Log in to your Stripe Dashboard**: https://dashboard.stripe.com/ or https://dashboard.stripe.com/test/workbench/webhooks 
+2. **Navigate to Developers > Webhooks** in the left sidebar
+3. **Click "Add endpoint"**
+4. **Enter your webhook URL**:
+   - For local testing with ngrok: `https://your-ngrok-url.ngrok.io/api/stripe-webhook`
+5. **Select the events to listen for**:
+   - `payment_intent.succeeded`
+   - `payment_intent.canceled`
+   - `payment_intent.payment_failed`
+6. **Click "Add endpoint"** to create it
+7. **Reveal and copy the signing secret** - this is your `STRIPE_WEBHOOK_SECRET`
+8. **Add it to your `.env` file**:
+   ```
+   STRIPE_WEBHOOK_SECRET=whsec_your_copied_secret_here
+   ```
+
+For local development without exposing your server to the internet, you can use the Stripe CLI:
+
+```bash
+# Install Stripe CLI (https://stripe.com/docs/stripe-cli)
+# Then login and forward webhooks to your local server
+stripe login
+stripe listen --forward-to localhost:3003/api/stripe-webhook
+```
+
+The CLI will provide a webhook secret you can use during development.
 
 ## Troubleshooting
 
@@ -544,4 +753,68 @@ curl http://localhost:3003/health
 Expected response:
 ```json
 {"status": "healthy"}
+```
+
+## Monitoring Payments
+
+### User Interface
+
+While the payment service does not include a UI, it provides several APIs to check payment status that can be integrated with your frontend:
+
+1. `GET /api/payment/{order_id}/status` - Check payment status by order ID
+2. `GET /api/payment/{payment_id}/details` - Get detailed payment information
+
+These endpoints can be called periodically to update payment status in your UI.
+
+### Stripe Dashboard
+
+For administrators and developers, the Stripe Dashboard provides comprehensive payment monitoring:
+
+1. **Real-time Payment Tracking**: View all payments and their statuses
+2. **Payment Search**: Filter payments by customer, amount, status, etc.
+3. **Payment History**: View full payment timeline including authorizations, captures, and refunds
+4. **Event Logs**: Review webhook events and system logs
+
+To access the dashboard:
+- Test Mode: https://dashboard.stripe.com/test/payments
+- Production: https://dashboard.stripe.com/payments
+
+### Logging and Metrics
+
+For system monitoring:
+
+1. **Application Logs**: Contains detailed payment processing information
+   ```bash
+   docker-compose logs -f payment-service
+   ```
+
+2. **Database Queries**: Directly check payment status in the database
+   ```bash
+   docker-compose exec payment-db psql -U postgres -d payment_db -c "SELECT * FROM payments ORDER BY created_at DESC LIMIT 10;"
+   ```
+
+3. **Webhook Events**: Monitor incoming Stripe events
+   ```bash
+   docker-compose logs -f payment-service | grep "Received Stripe event"
+   ```
+
+### Notifications
+
+Configure notifications for payment events:
+
+1. **Email Notifications**: Set up in Stripe Dashboard → Settings → Notifications
+2. **Slack Alerts**: Connect Stripe to Slack for real-time payment alerts
+3. **Custom Notifications**: Use the Kafka events published by the payment service to trigger custom notifications
+
+```json
+// Example Kafka message format for a payment event
+{
+  "type": "payment.authorized",
+  "payload": {
+    "orderId": "order_123abc",
+    "paymentId": "payment_abc123",
+    "customerId": "user_123",
+    "amount": 1999
+  }
+}
 ```

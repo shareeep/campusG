@@ -4,16 +4,12 @@ from datetime import datetime
 from app.models.models import Payment, PaymentStatus
 from app import db
 from app.services.kafka_service import kafka_client
-import requests
 import json
 from app.services.stripe_service import StripeService
 from sqlalchemy.exc import SQLAlchemyError
 import os
 
 api = Blueprint('api', __name__)
-
-# Configure user service URL
-USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user-service:3000")
 
 @api.route('/payment/<order_id>/authorize', methods=['POST'])
 def authorize_order_payment(order_id):
@@ -25,8 +21,12 @@ def authorize_order_payment(order_id):
         "customer": {
             "clerkUserId": "user_123",
             "userStripeCard": {
-                "payment_method_id": "pm_123"  // Optional if already stored
+                "payment_method_id": "pm_123"  // Required for payment
             }
+        },
+        "order": {
+            "amount": 1000,  // Amount in cents
+            "description": "Order description"  // Optional
         },
         "custpaymentId": "payment_123"  // Optional
     }
@@ -41,6 +41,11 @@ def authorize_order_payment(order_id):
         if not customer_data:
             return jsonify({"success": False, "description": "Missing customer data"}), 400
         
+        # Extract order data
+        order_data = data.get('order')
+        if not order_data or 'amount' not in order_data:
+            return jsonify({"success": False, "description": "Missing order data or amount"}), 400
+        
         # Custom payment ID (optional)
         cust_payment_id = data.get('custpaymentId')
         
@@ -52,38 +57,30 @@ def authorize_order_payment(order_id):
                 "description": f"Payment already exists for order {order_id} with status {existing_payment.status.name}"
             }), 400
         
-        # Get order details (normally you'd fetch from order service)
-        # Here we're assuming the order info is passed or fetched elsewhere
-        # For this example, we'll get it from an order service or mock it
-        order_info = get_order_info(order_id)
-        if not order_info:
-            return jsonify({"success": False, "description": "Order not found"}), 404
-        
         # Get customer ID and payment method
         clerk_user_id = customer_data.get('clerkUserId')
+        if not clerk_user_id:
+            return jsonify({"success": False, "description": "Missing customer ID"}), 400
+            
+        # Get payment method ID directly from request
         payment_method_id = None
-        
-        # Check if payment method is provided directly
         if customer_data.get('userStripeCard') and customer_data['userStripeCard'].get('payment_method_id'):
             payment_method_id = customer_data['userStripeCard']['payment_method_id']
         
-        # If not, fetch from user service
-        if not payment_method_id and clerk_user_id:
-            payment_method_id = get_user_payment_method(clerk_user_id)
-            
         if not payment_method_id:
             return jsonify({
                 "success": False, 
-                "description": "No payment method available for this customer"
+                "description": "No payment method provided for this customer"
             }), 400
         
         # Create payment intent with escrow functionality
+        description = order_data.get('description', f"Order {order_id} - CampusG Escrow")
         result = StripeService.create_payment_intent(
             customer_id=clerk_user_id,
             order_id=order_id,
-            amount=order_info['amount'],
+            amount=order_data['amount'],
             payment_method_id=payment_method_id,
-            description=f"Order {order_id} - CampusG Escrow"
+            description=description
         )
         
         if result["success"]:
@@ -109,7 +106,7 @@ def authorize_order_payment(order_id):
                     'orderId': order_id,
                     'paymentId': result["payment_id"],
                     'customerId': clerk_user_id,
-                    'amount': order_info['amount']
+                    'amount': order_data['amount']
                 }
             })
             
@@ -277,43 +274,50 @@ def release_order_payment(order_id):
             "description": f"Server error: {str(e)}"
         }), 500
 
-def get_user_payment_method(clerk_user_id):
+@api.route('/payment/<order_id>/status', methods=['GET'])
+def get_payment_status(order_id):
     """
-    Get the payment method ID from the user service
+    Check the status of a payment for a specific order
     """
     try:
-        response = requests.get(f"{USER_SERVICE_URL}/api/user/{clerk_user_id}/payment")
-        if response.status_code == 200:
-            data = response.json()
-            payment_info = data.get('payment_info', {})
-            return payment_info.get('payment_method_id')
-        return None
+        # Find payment by order ID
+        payment = Payment.query.filter_by(order_id=order_id).first()
+        if not payment:
+            return jsonify({"success": False, "description": "Payment not found"}), 404
+            
+        # Return payment details
+        return jsonify({
+            "success": True,
+            "payment": payment.to_dict()
+        }), 200
+            
     except Exception as e:
-        current_app.logger.error(f"Error getting user payment method: {str(e)}")
-        return None
+        current_app.logger.error(f"Error getting payment status: {str(e)}")
+        return jsonify({
+            "success": False,
+            "description": f"Server error: {str(e)}"
+        }), 500
 
-def get_order_info(order_id):
+@api.route('/payment/<payment_id>/details', methods=['GET'])
+def get_payment_details(payment_id):
     """
-    Get order information from the order service
-    
-    This is a placeholder - in a real implementation, you would call the Order Service
+    Get detailed information about a specific payment
     """
     try:
-        # In a real implementation, you would make an API call to the order service
-        # For now, we'll mock the response
-        
-        # Example API call:
-        # response = requests.get(f"{ORDER_SERVICE_URL}/api/orders/{order_id}")
-        # if response.status_code == 200:
-        #     return response.json()
-        # return None
-        
-        # Mock response for testing
-        return {
-            'orderId': order_id,
-            'amount': 1999,  # $19.99 in cents
-            'description': f"Food delivery order {order_id}"
-        }
+        # Find payment by payment ID
+        payment = Payment.query.get(payment_id)
+        if not payment:
+            return jsonify({"success": False, "description": "Payment not found"}), 404
+            
+        # Return payment details
+        return jsonify({
+            "success": True,
+            "payment": payment.to_dict()
+        }), 200
+            
     except Exception as e:
-        current_app.logger.error(f"Error fetching order info: {str(e)}")
-        return None
+        current_app.logger.error(f"Error getting payment details: {str(e)}")
+        return jsonify({
+            "success": False,
+            "description": f"Server error: {str(e)}"
+        }), 500
