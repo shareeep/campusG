@@ -263,24 +263,6 @@ services:
     ports:
       - "3003:3000"
 
-  escrow-service:
-    build:
-      context: ./services/escrow-service
-      dockerfile: Dockerfile
-      args:
-        - REBUILD=1
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@escrow-db:5432/escrow_db
-      # - KAFKA_BROKERS=kafka:29092
-      - PAYMENT_SERVICE_URL=http://payment-service:3000
-    depends_on:
-      escrow-db:
-        condition: service_healthy
-      payment-service:
-        condition: service_started
-    ports:
-      - "3004:3000"
-
   scheduler-service:
     build:
       context: ./services/scheduler-service

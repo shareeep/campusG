@@ -16,7 +16,7 @@ def create_app(config=None):
         SECRET_KEY=os.environ.get('SECRET_KEY', 'dev'),
         SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/payment_db'),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        KAFKA_BOOTSTRAP_SERVERS=os.environ.get('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092'),
+        KAFKA_BOOTSTRAP_SERVERS=os.environ.get('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092'),
         STRIPE_API_KEY=os.environ.get('STRIPE_API_KEY', 'sk_test_your_key'),
         STRIPE_WEBHOOK_SECRET=os.environ.get('STRIPE_WEBHOOK_SECRET', 'whsec_your_secret'),
     )
@@ -29,11 +29,6 @@ def create_app(config=None):
     db.init_app(app)
     migrate.init_app(app, db)
     
-    # Register middlewares
-    from app.middleware.tracing import TracingMiddleware
-    tracing_middleware = TracingMiddleware()
-    tracing_middleware.init_app(app)
-    
     # Register blueprints
     from app.api.payment_routes import api as payment_api
     app.register_blueprint(payment_api, url_prefix='/api')
@@ -43,59 +38,20 @@ def create_app(config=None):
     def health_check():
         return {'status': 'healthy'}, 200
     
-    # Create log API blueprint and register it
-    from flask import Blueprint
-    from app.models.system_log import SystemLog
-    from flask import jsonify, request
-    
-    log_api = Blueprint('logs', __name__)
-    
-    @log_api.route('/logs', methods=['GET'])
-    def get_logs():
-        """Get system logs with optional filtering"""
-        # Query parameters
-        level = request.args.get('level')
-        trace_id = request.args.get('traceId')
-        limit = int(request.args.get('limit', 100))
-        
-        # Build query
-        query = SystemLog.query
-        
-        if level:
-            query = query.filter_by(level=level)
-            
-        if trace_id:
-            query = query.filter_by(trace_id=trace_id)
-        
-        # Get logs with limit
-        logs = query.order_by(SystemLog.timestamp.desc()).limit(limit).all()
-        
-        return jsonify({
-            'success': True,
-            'logs': [log.to_dict() for log in logs]
-        })
-    
-    @log_api.route('/logs/trace/<trace_id>', methods=['GET'])
-    def get_logs_by_trace(trace_id):
-        """Get all logs for a specific trace"""
-        logs = SystemLog.query.filter_by(trace_id=trace_id).order_by(SystemLog.timestamp).all()
-        
-        return jsonify({
-            'success': True,
-            'traceId': trace_id,
-            'logs': [log.to_dict() for log in logs]
-        })
-    
-    app.register_blueprint(log_api, url_prefix='/api')
+    # Import and register blueprints
+    from app.api.webhook_routes import webhook
+    app.register_blueprint(webhook, url_prefix='/api')
     
     # Setup database
     with app.app_context():
         # Import models to ensure they're registered with SQLAlchemy
         from app.models import models
-        from app.models import system_log
         
-        # Configure stripe placeholder API key
-        from app.utils import stripe_placeholder as stripe
+        # Configure real Stripe service instead of placeholder
+        from app.services.stripe_service import StripeService
+        
+        # Set Stripe API key directly through the official SDK
+        import stripe
         stripe.api_key = app.config.get('STRIPE_API_KEY', 'sk_test_your_key')
         
         # Create tables if they don't exist
@@ -125,10 +81,5 @@ def create_app(config=None):
                         db.metadata.tables[table_name].create(db.engine)
                     except Exception as table_error:
                         app.logger.error(f"Failed to create table {table_name}: {str(table_error)}")
-    
-    # Start log consumer in a background thread if in production
-    if not app.debug:
-        from app.services.log_consumer import start_log_consumer_thread
-        start_log_consumer_thread(app)
     
     return app
