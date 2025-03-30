@@ -21,7 +21,7 @@ def get_user(clerk_user_id):
     """
     Get user information by ID
     
-    This endpoint retrieves a user's information including their profile and payment data.
+    This endpoint retrieves all of the user's information 
     """
     try:
         user = User.query.get(clerk_user_id)
@@ -41,6 +41,28 @@ def get_user(clerk_user_id):
         current_app.logger.error(f"Error retrieving user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to retrieve user: {str(e)}"}), 500
 
+@api.route('/user/<clerk_user_id>/payment', methods=['GET'])
+def get_payment_info(clerk_user_id):
+    """
+    Get only the user's payment information
+    """
+    try:
+        user = User.query.get(clerk_user_id)
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+        if not user.user_stripe_card:
+            return jsonify({'success': False, 'message': 'User has no payment method'}), 400
+            
+        return jsonify({
+            'success': True,
+            'payment_info': user.user_stripe_card
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving payment info for user {clerk_user_id}: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to retrieve payment information: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/payment', methods=['PUT'])
 def update_payment_info(clerk_user_id):
@@ -134,31 +156,6 @@ def update_payment_info(clerk_user_id):
         db.session.rollback()
         current_app.logger.error(f"Error updating payment info for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update payment information: {str(e)}"}), 500
-
-@api.route('/user/<clerk_user_id>/payment', methods=['GET'])
-def get_payment_info(clerk_user_id):
-    """
-    Get user's payment information
-    
-    This endpoint is used by other services (like Payment Service) to retrieve payment method info.
-    """
-    try:
-        user = User.query.get(clerk_user_id)
-        
-        if not user:
-            return jsonify({'success': False, 'message': 'User not found'}), 404
-            
-        if not user.user_stripe_card:
-            return jsonify({'success': False, 'message': 'User has no payment method'}), 400
-            
-        return jsonify({
-            'success': True,
-            'payment_info': user.user_stripe_card
-        }), 200
-        
-    except Exception as e:
-        current_app.logger.error(f"Error retrieving payment info for user {clerk_user_id}: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to retrieve payment information: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/payment', methods=['DELETE'])
 def delete_payment_info(clerk_user_id):
