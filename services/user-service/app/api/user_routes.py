@@ -539,3 +539,82 @@ def handle_user_deleted(user_data):
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error handling user.deleted: {str(e)}")
+
+@api.route('/user/<clerk_user_id>/payment-methods', methods=['POST'])
+def add_payment_method(clerk_user_id):
+    """Add a payment method to a user's profile"""
+    try:
+        data = request.json
+        payment_method_id = data.get('payment_method_id')
+        
+        if not payment_method_id:
+            return jsonify({"success": False, "description": "Missing payment method ID"}), 400
+            
+        user = User.query.get(clerk_user_id)
+        if not user:
+            return jsonify({"success": False, "description": "User not found"}), 404
+        
+        # Import Stripe here to avoid global import issues
+        import stripe
+        
+        # Get Stripe API key from environment variables
+        stripe_api_key = current_app.config.get('STRIPE_SECRET_KEY') or os.environ.get('STRIPE_SECRET_KEY')
+        
+        if not stripe_api_key:
+            return jsonify({"success": False, "description": "Stripe API key not configured"}), 500
+            
+        stripe.api_key = stripe_api_key
+        
+        # Create or retrieve Stripe customer
+        if not user.stripe_customer_id:
+            # Create a new Stripe customer
+            customer = stripe.Customer.create(
+                metadata={'clerk_user_id': clerk_user_id},
+                email=user.email,
+                name=f"{user.first_name} {user.last_name}"
+            )
+            user.stripe_customer_id = customer.id
+            db.session.commit()
+        
+        # Attach payment method to customer
+        try:
+            stripe.PaymentMethod.attach(
+                payment_method_id,
+                customer=user.stripe_customer_id
+            )
+            
+            # Set as default payment method
+            stripe.Customer.modify(
+                user.stripe_customer_id,
+                invoice_settings={'default_payment_method': payment_method_id}
+            )
+        except stripe.error.StripeError as e:
+            current_app.logger.error(f"Could not attach payment method: {str(e)}")
+            return jsonify({"success": False, "description": f"Payment method error: {str(e)}"}), 400
+        
+        # Retrieve payment method details
+        payment_method = stripe.PaymentMethod.retrieve(payment_method_id)
+        
+        # Store card details in user profile
+        card_data = {
+            'payment_method_id': payment_method_id,
+            'brand': payment_method.card.brand,
+            'last4': payment_method.card.last4,
+            'exp_month': payment_method.card.exp_month,
+            'exp_year': payment_method.card.exp_year,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        user.user_stripe_card = card_data
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "description": "Payment method added successfully",
+            "payment_info": card_data  # Changed from "card" to "payment_info" for consistency
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error adding payment method: {str(e)}")
+        return jsonify({"success": False, "description": f"Server error: {str(e)}"}), 500

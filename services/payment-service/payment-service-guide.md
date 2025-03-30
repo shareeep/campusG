@@ -148,7 +148,8 @@ Authorizes a payment from a customer and holds it in escrow until the order is c
     "amount": 2098,
     "description": "Order with ID order_123abc - CampusG Escrow"
   },
-  "custpaymentId": "optional_custom_payment_id"
+  "custpaymentId": "optional_custom_payment_id",
+  "return_url": "https://campusg.com/order-confirmation"
 }
 ```
 
@@ -166,7 +167,8 @@ curl -X POST http://localhost:3003/api/payment/order_123abc/authorize \
     "order": {
       "amount": 2098,
       "description": "Order order_123abc - CampusG Escrow"
-    }
+    },
+    "return_url": "https://campusg.com/order-confirmation"
   }'
 ```
 
@@ -356,6 +358,23 @@ curl -X GET http://localhost:3003/api/payment/payment_abc123/details
 }
 ```
 
+### Return URL Configuration
+
+When making payment authorization requests, you need to include a `return_url` parameter:
+
+```json
+{
+  // ...other parameters...
+  "return_url": "http://localhost:5173/customer/order-form"
+}
+```
+
+During development, you can use any valid URL from your frontend application:
+- Development: `http://localhost:5173/customer/order-form`
+- Production: `https://campusg.com/order-confirmation` (when available)
+
+Stripe will redirect users to this URL after they complete authentication or complete their payment process. Later, you can implement a dedicated payment confirmation page to improve user experience.
+
 ## Testing Guide
 
 ### Prerequisites
@@ -495,6 +514,9 @@ For testing payments, use Stripe's test cards:
 | 4000 0000 0000 9995 | Payment requires authentication |
 | 4000 0000 0000 0002 | Payment declined |
 
+
+| Card Number | Description |
+|-------------|-------------|
 | Visa | 4242 4242 4242 4242 |
 | Mastercard | 5555 5555 5555 4444 |
 | American Express | 3782 822463 10005 |

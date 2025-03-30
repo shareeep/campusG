@@ -24,12 +24,13 @@ class Payment(db.Model):
     payment_intent_id = db.Column(db.String(255), nullable=True)
     
     # Order and user info
-    order_id = db.Column(db.String(36), nullable=False, index=True)
+    # Order ID should be unique for each payment
+    order_id = db.Column(db.String(36), nullable=False, index=True, unique=True)
     customer_id = db.Column(db.String(36), nullable=False, index=True)
     runner_id = db.Column(db.String(36), nullable=True)
     
     # Payment details
-    amount = db.Column(Numeric(5, 2), nullable=False)
+    amount = db.Column(Numeric(10, 2), nullable=False)
     # Changed from db.Enum(PaymentStatus) to use string storage with Enum validation
     status = db.Column(db.String(20), nullable=False, default=PaymentStatus.INITIATING.name, index=True)
     description = db.Column(db.String(255), nullable=True)
@@ -44,7 +45,7 @@ class Payment(db.Model):
     def to_dict(self):
         """Convert the model to a dictionary"""
         return {
-            'paymentId': self.id,
+            'paymentId': self.payment_id,
             'orderId': self.order_id,
             'customerId': self.customer_id,
             'runnerId': self.runner_id,
