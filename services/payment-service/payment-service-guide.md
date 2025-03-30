@@ -70,7 +70,7 @@ The payment service should be running on port 3003.
 
 1. Sign in to your Stripe Dashboard
 2. Navigate to Developers > Webhooks
-3. Add an endpoint with the URL: `http://your-domain/api/stripe-webhook`
+3. Add an endpoint with the URL: `http://your-ngrok-link/api/stripe-webhook`
 4. Subscribe to the following events:
    - `payment_intent.succeeded`
    - `payment_intent.canceled`
@@ -93,7 +93,7 @@ The main entity in the database is the `Payment` model with the following struct
 | customer_id | String | Customer who made the payment |
 | runner_id | String | Runner to receive the payment (when completed) |
 | amount | Decimal | Payment amount in USD |
-| status | Enum | Payment status (INITIATING, AUTHORIZED, RELEASED, REVERTED, FAILED) |
+| status | String | Payment status (INITIATING, AUTHORIZED, RELEASED, REVERTED, FAILED) |
 | description | String | Payment description |
 | created_at | DateTime | Timestamp when record was created |
 | updated_at | DateTime | Timestamp when record was last updated |
@@ -106,10 +106,7 @@ If you need to manually initialize the database:
 # Connect to the database container
 docker-compose exec payment-db psql -U postgres -d payment_db
 
-# Inside the PostgreSQL shell, create the enum type if needed
-CREATE TYPE payment_status AS ENUM ('INITIATING', 'AUTHORIZED', 'RELEASED', 'REVERTED', 'FAILED');
-
-# Create the payments table if needed
+# Inside the PostgreSQL shell, create the payments table if needed
 CREATE TABLE payments (
     id VARCHAR(36) PRIMARY KEY,
     payment_id VARCHAR(36) UNIQUE,
@@ -118,7 +115,7 @@ CREATE TABLE payments (
     customer_id VARCHAR(36) NOT NULL,
     runner_id VARCHAR(36),
     amount NUMERIC(5,2) NOT NULL,
-    status payment_status NOT NULL,
+    status VARCHAR(20) NOT NULL,
     description VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL

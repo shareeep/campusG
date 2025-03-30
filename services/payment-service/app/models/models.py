@@ -30,7 +30,8 @@ class Payment(db.Model):
     
     # Payment details
     amount = db.Column(Numeric(5, 2), nullable=False)
-    status = db.Column(db.Enum(PaymentStatus), nullable=False, default=PaymentStatus.INITIATING, index=True)
+    # Changed from db.Enum(PaymentStatus) to use string storage with Enum validation
+    status = db.Column(db.String(20), nullable=False, default=PaymentStatus.INITIATING.name, index=True)
     description = db.Column(db.String(255), nullable=True)
     
     # Timestamps
@@ -48,7 +49,7 @@ class Payment(db.Model):
             'customerId': self.customer_id,
             'runnerId': self.runner_id,
             'amount': float(self.amount),
-            'status': self.status.name,
+            'status': self.status,  # Now returns string directly
             'description': self.description,
             'paymentIntentId': self.payment_intent_id,
             'createdAt': self.created_at.isoformat(),

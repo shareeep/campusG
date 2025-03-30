@@ -2,8 +2,9 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 import os
+import logging
 
-# Initialize SQLAlchemy without binding to a specific app
+# Initialize SQLAlchemy instance first (without binding to app yet)
 db = SQLAlchemy()
 migrate = Migrate()
 
@@ -54,32 +55,16 @@ def create_app(config=None):
         import stripe
         stripe.api_key = app.config.get('STRIPE_API_KEY', 'sk_test_your_key')
         
-        # Create tables if they don't exist
-        # Use try-except to handle the case where enum types already exist
-        try:
-            db.create_all()
-        except Exception as e:
-            app.logger.warning(f"Error during db.create_all(): {str(e)}")
-            
-            # If there's an error with duplicate types, try to create tables individually
-            # This approach will skip the enum type creation but still create tables
-            from sqlalchemy import inspect
-            inspector = inspect(db.engine)
-            
-            # Get all table names from the models
-            model_tables = db.metadata.tables.keys()
-            
-            # Get existing tables in the database
-            existing_tables = inspector.get_table_names()
-            
-            # Create only tables that don't exist yet
-            for table_name in model_tables:
-                if table_name not in existing_tables:
-                    app.logger.info(f"Creating table {table_name}")
-                    try:
-                        # Create just this table
-                        db.metadata.tables[table_name].create(db.engine)
-                    except Exception as table_error:
-                        app.logger.error(f"Failed to create table {table_name}: {str(table_error)}")
+        # Safe database initialization - check if tables exist first
+        from app.models.models import Payment
+        inspector = db.inspect(db.engine)
+        if not inspector.has_table('payments'):
+            try:
+                db.create_all()
+                app.logger.info("Database tables created successfully")
+            except Exception as e:
+                app.logger.warning(f"Error during db.create_all(): {e}")
+        else:
+            app.logger.info("Database tables already exist - skipping creation")
     
     return app

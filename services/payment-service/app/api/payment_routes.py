@@ -96,7 +96,7 @@ def authorize_order_payment(order_id):
             # Update payment status in database
             payment = Payment.query.get(result["payment_id"])
             if payment:
-                payment.status = PaymentStatus.AUTHORIZED
+                payment.status = PaymentStatus.AUTHORIZED.name
                 db.session.commit()
             
             # Publish payment authorized event
@@ -151,10 +151,10 @@ def revert_order_payment(order_id):
             return jsonify({"success": False, "description": "Payment not found"}), 404
             
         # Check if payment can be reverted
-        if payment.status not in [PaymentStatus.AUTHORIZED, PaymentStatus.INESCROW]:
+        if payment.status not in [PaymentStatus.AUTHORIZED.name, PaymentStatus.INESCROW.name]:
             return jsonify({
                 "success": False,
-                "description": f"Payment cannot be reverted in status: {payment.status.name}"
+                "description": f"Payment cannot be reverted in status: {payment.status}"
             }), 400
             
         # Revert payment via service
@@ -165,7 +165,7 @@ def revert_order_payment(order_id):
         
         if result["success"]:
             # Update payment status
-            payment.status = PaymentStatus.FAILED
+            payment.status = PaymentStatus.FAILED.name
             db.session.commit()
             
             # Publish payment reverted event
@@ -224,10 +224,10 @@ def release_order_payment(order_id):
             return jsonify({"success": False, "description": "Payment not found"}), 404
             
         # Check if payment can be released
-        if payment.status not in [PaymentStatus.AUTHORIZED, PaymentStatus.INESCROW]:
+        if payment.status not in [PaymentStatus.AUTHORIZED.name, PaymentStatus.INESCROW.name]:
             return jsonify({
                 "success": False,
-                "description": f"Payment cannot be released in status: {payment.status.name}"
+                "description": f"Payment cannot be released in status: {payment.status}"
             }), 400
             
         # Release funds via service
@@ -238,7 +238,7 @@ def release_order_payment(order_id):
         
         if result["success"]:
             # Update payment status and runner ID
-            payment.status = PaymentStatus.RELEASED
+            payment.status = PaymentStatus.RELEASED.name
             payment.runner_id = runner_id
             db.session.commit()
             
