@@ -1,21 +1,23 @@
 from flask import Blueprint, request, jsonify, current_app
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 import json
 import logging
+import uuid
 from app import db
 from app.models.saga_state import CreateOrderSagaState, SagaStatus, SagaStep
-from app.services.service_clients import (
-    UserServiceClient, OrderServiceClient, PaymentServiceClient,
-    EscrowServiceClient, SchedulerServiceClient, NotificationServiceClient
-)
-
 saga_bp = Blueprint('saga', __name__, url_prefix='/api')
 logger = logging.getLogger(__name__)
 
 @saga_bp.route('/orders', methods=['POST'])
 def create_order():
     """Endpoint to start the create order saga"""
+    # Access services from the current app context
+    orchestrator = current_app.orchestrator
+    
+    if not orchestrator:
+        return jsonify({'success': False, 'error': 'Orchestrator service not initialized'}), 500
+        
     data = request.get_json()
     
     if not data:
@@ -35,237 +37,37 @@ def create_order():
     except Exception as e:
         return jsonify({'success': False, 'error': f'Error calculating total: {str(e)}'}), 400
     
-    # Create saga state
-    saga_state = CreateOrderSagaState(
-        customer_id=customer_id,
-        status=SagaStatus.STARTED,
-        current_step=SagaStep.GET_USER_DATA,
-        order_details=order_details,
-        payment_amount=float(payment_amount)
-    )
-    db.session.add(saga_state)
-    db.session.commit()
-    
-    # Start saga execution
-    logger.info(f"Starting create order saga for customer {customer_id}")
-    result = execute_saga(saga_state.id)
-    
-    if result['success']:
-        return jsonify(result), 201
-    else:
-        return jsonify(result), 400
-
-
-def execute_saga(saga_id):
-    """Execute the create order saga flow"""
+    # The orchestrator's start_saga method now has internal checks for Kafka
+    # and will return appropriate error messages if initialization failed
     try:
-        saga_state = CreateOrderSagaState.query.get(saga_id)
-        if not saga_state:
-            return {'success': False, 'error': 'Saga state not found'}
-        
-        # Step 1: Get user data
-        logger.info(f"Saga {saga_id}: Getting user data")
-        saga_state.update_status(SagaStatus.STARTED, SagaStep.GET_USER_DATA)
-        db.session.commit()
-        
-        user_client = UserServiceClient()
-        user_result = user_client.get_user(saga_state.customer_id)
-        
-        if not user_result['success']:
-            logger.error(f"Saga {saga_id}: Failed to get user data - {user_result['error']}")
-            saga_state.update_status(SagaStatus.FAILED, error=user_result['error'])
-            db.session.commit()
-            return {'success': False, 'error': f"Failed to get user data: {user_result['error']}"}
-        
-        # Step 2: Create order
-        logger.info(f"Saga {saga_id}: Creating order")
-        saga_state.update_status(SagaStatus.STARTED, SagaStep.CREATE_ORDER)
-        db.session.commit()
-        
-        order_client = OrderServiceClient()
-        order_result = order_client.create_order(saga_state.customer_id, saga_state.order_details)
-        
-        if not order_result['success']:
-            logger.error(f"Saga {saga_id}: Failed to create order - {order_result['error']}")
-            saga_state.update_status(SagaStatus.FAILED, error=order_result['error'])
-            db.session.commit()
-            return {'success': False, 'error': f"Failed to create order: {order_result['error']}"}
-        
-        # Save order ID
-        order_id = order_result['data']['order_id']
-        saga_state.order_id = order_id
-        db.session.commit()
-        
-        # Notify about pending payment
-        notification_client = NotificationServiceClient()
-        notification_client.send_notification(
-            'PENDING_PAYMENT',
-            saga_state.customer_id,
-            {
-                'orderId': saga_state.order_id,
-                'status': 'pendingPayment'
-            }
-        )
-        
-        # Step 3: Authorize payment
-        logger.info(f"Saga {saga_id}: Authorizing payment")
-        saga_state.update_status(SagaStatus.STARTED, SagaStep.AUTHORIZE_PAYMENT)
-        db.session.commit()
-        
-        payment_client = PaymentServiceClient()
-        payment_result = payment_client.authorize_payment(
-            saga_state.order_id,
-            saga_state.customer_id,
-            saga_state.payment_amount
-        )
-        
-        if not payment_result['success']:
-            logger.error(f"Saga {saga_id}: Payment authorization failed - {payment_result['error']}")
-            # Compensating transaction: update order status to failed
-            order_client.update_order_status(saga_state.order_id, 'CANCELLED')
+        logger.info(f"Starting create order saga for customer {customer_id}")
             
-            saga_state.update_status(SagaStatus.FAILED, error=payment_result['error'])
-            db.session.commit()
-            return {'success': False, 'error': f"Payment authorization failed: {payment_result['error']}"}
-        
-        # Notify about payment authorization
-        notification_client.send_notification(
-            'PAYMENT_AUTHORIZED',
-            saga_state.customer_id,
-            {
-                'orderId': saga_state.order_id,
-                'amount': saga_state.payment_amount
-            }
+        # Start the saga (will lazy-initialize if needed)
+        success, message, saga_state = orchestrator.start_saga(
+            customer_id, 
+            order_details, 
+            payment_amount
         )
         
-        # Step 4: Hold funds in escrow
-        logger.info(f"Saga {saga_id}: Holding funds in escrow")
-        saga_state.update_status(SagaStatus.STARTED, SagaStep.HOLD_FUNDS)
-        db.session.commit()
-        
-        # Get food and delivery fees from order details
-        food_fee = calculate_food_total(saga_state.order_details.get('foodItems', []))
-        delivery_fee = calculate_delivery_fee(saga_state.order_details.get('deliveryLocation', ''))
-        
-        escrow_client = EscrowServiceClient()
-        escrow_result = escrow_client.hold_funds(
-            saga_state.order_id,
-            saga_state.customer_id,
-            saga_state.payment_amount,
-            float(food_fee),
-            float(delivery_fee)
-        )
-        
-        if not escrow_result['success']:
-            logger.error(f"Saga {saga_id}: Escrow hold failed - {escrow_result['error']}")
-            # Compensating transaction: release payment authorization
-            payment_client.release_payment(saga_state.order_id)
-            order_client.update_order_status(saga_state.order_id, 'CANCELLED')
-            
-            saga_state.update_status(SagaStatus.FAILED, error=escrow_result['error'])
-            db.session.commit()
-            return {'success': False, 'error': f"Failed to hold funds in escrow: {escrow_result['error']}"}
-        
-        # Notify about escrow placement
-        notification_client.send_notification(
-            'ESCROW_PLACED',
-            saga_state.customer_id,
-            {
-                'orderId': saga_state.order_id,
-                'amount': saga_state.payment_amount
-            }
-        )
-        
-        # Step 5: Update order status to created
-        logger.info(f"Saga {saga_id}: Updating order status to CREATED")
-        saga_state.update_status(SagaStatus.STARTED, SagaStep.UPDATE_ORDER_STATUS)
-        db.session.commit()
-        
-        status_result = order_client.update_order_status(saga_state.order_id, 'CREATED')
-        if not status_result['success']:
-            logger.error(f"Saga {saga_id}: Failed to update order status - {status_result['error']}")
-            # This is not critical - we can still proceed but log the error
-            logger.warning(f"Failed to update order status but continuing: {status_result['error']}")
-        
-        # Notify about order created
-        notification_client.send_notification(
-            'ORDER_CREATED',
-            saga_state.customer_id,
-            {
-                'orderId': saga_state.order_id,
-                'status': 'created'
-            }
-        )
-        
-        # Step 6: Start order timeout timer
-        logger.info(f"Saga {saga_id}: Starting order timeout timer")
-        saga_state.update_status(SagaStatus.STARTED, SagaStep.START_TIMER)
-        db.session.commit()
-        
-        # Schedule an event 30 minutes in the future
-        timeout_at = (datetime.utcnow() + timedelta(minutes=30)).isoformat()
-        
-        scheduler_client = SchedulerServiceClient()
-        timer_result = scheduler_client.schedule_timeout(
-            saga_state.order_id,
-            saga_state.customer_id,
-            timeout_at
-        )
-        
-        if not timer_result['success']:
-            logger.error(f"Saga {saga_id}: Failed to start timer - {timer_result['error']}")
-            # This is not critical - we can still proceed but log the error
-            logger.warning(f"Failed to start order timeout timer but continuing: {timer_result['error']}")
-        
-        # Step 7: Final notification to user
-        logger.info(f"Saga {saga_id}: Sending final notification")
-        saga_state.update_status(SagaStatus.STARTED, SagaStep.NOTIFY_USER)
-        db.session.commit()
-        
-        notification_client.send_notification(
-            'ORDER_READY_FOR_RUNNER',
-            saga_state.customer_id,
-            {
-                'orderId': saga_state.order_id,
-                'message': 'Your order is now available for runners to accept.'
-            }
-        )
-        
-        # Saga completed successfully
-        logger.info(f"Saga {saga_id}: Completed successfully")
-        saga_state.update_status(SagaStatus.COMPLETED)
-        db.session.commit()
-        
-        return {
-            'success': True,
-            'order_id': saga_state.order_id,
-            'message': 'Order created successfully'
-        }
-        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'saga_id': saga_state.id,
+                'status': saga_state.status.name
+            }), 202  # Accepted, will process asynchronously
+        else:
+            return jsonify({
+                'success': False,
+                'error': message
+            }), 400
     except Exception as e:
-        logger.error(f"Error executing saga {saga_id}: {str(e)}")
-        
-        try:
-            # Attempt to update saga state
-            saga_state = CreateOrderSagaState.query.get(saga_id)
-            if saga_state:
-                saga_state.update_status(SagaStatus.FAILED, error=str(e))
-                db.session.commit()
-                
-                # Attempt to clean up if possible
-                if saga_state.order_id:
-                    try:
-                        OrderServiceClient().update_order_status(saga_state.order_id, 'CANCELLED')
-                        PaymentServiceClient().release_payment(saga_state.order_id)
-                    except Exception as cleanup_error:
-                        logger.error(f"Error during cleanup: {str(cleanup_error)}")
-        except Exception as state_error:
-            logger.error(f"Error updating saga state: {str(state_error)}")
-            
-        return {
+        logger.error(f"Error starting saga: {str(e)}")
+        return jsonify({
             'success': False,
-            'error': f"Unexpected error: {str(e)}"
-        }
+            'error': f"Error starting saga: {str(e)}"
+        }), 500
+
 
 
 @saga_bp.route('/sagas/<saga_id>', methods=['GET'])
@@ -275,7 +77,7 @@ def get_saga_state(saga_id):
     if not saga_state:
         return jsonify({'success': False, 'error': 'Saga not found'}), 404
     
-    return jsonify({
+    response = {
         'id': saga_state.id,
         'customer_id': saga_state.customer_id,
         'order_id': saga_state.order_id,
@@ -285,7 +87,9 @@ def get_saga_state(saga_id):
         'created_at': saga_state.created_at.isoformat(),
         'updated_at': saga_state.updated_at.isoformat(),
         'completed_at': saga_state.completed_at.isoformat() if saga_state.completed_at else None
-    }), 200
+    }
+    
+    return jsonify(response), 200
 
 
 @saga_bp.route('/sagas', methods=['GET'])
