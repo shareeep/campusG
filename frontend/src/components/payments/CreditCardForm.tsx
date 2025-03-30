@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button';
 interface CreditCardFormProps {
   onSave: (paymentMethodId: string) => Promise<void>;
   defaultErrorMessage?: string | null;
+  // Make userId optional to avoid TypeScript errors
+  userId?: string;
 }
 
-export function CreditCardForm({ onSave, defaultErrorMessage }: CreditCardFormProps) {
+export function CreditCardForm({ onSave, defaultErrorMessage, userId }: CreditCardFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState<string | null>(defaultErrorMessage || null);
@@ -30,22 +32,30 @@ export function CreditCardForm({ onSave, defaultErrorMessage }: CreditCardFormPr
     setError(null);
     
     try {
-      const { error, paymentMethod } = await stripe.createPaymentMethod({
+      // Step 1: Create a Payment Method
+      const { error: createError, paymentMethod } = await stripe.createPaymentMethod({
         type: 'card',
         card: cardElement,
+        // You can optionally include billing details if userId is available
+        ...(userId ? { billing_details: { email: userId } } : {})
       });
       
-      if (error) {
-        setError(error.message || 'An error occurred with your card');
+      if (createError) {
+        setError(createError.message || 'An error occurred with your card');
+        setLoading(false);
         return;
       }
       
       if (!paymentMethod || !paymentMethod.id) {
         setError('Failed to create payment method');
+        setLoading(false);
         return;
       }
       
+      // Step 2: Setup for future usage by creating and attaching to a customer
+      // This is now handled by the backend in the update-payment endpoint
       await onSave(paymentMethod.id);
+      
       setSuccess(true);
       cardElement.clear();
     } catch (err) {

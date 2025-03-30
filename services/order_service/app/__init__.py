@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+# from flask_migrate import Migrate
 import logging
 
 # Configure logging
@@ -10,6 +11,7 @@ logging.basicConfig(
 
 # Initialize extensions
 db = SQLAlchemy()
+# migrate = Migrate()
 
 # Import config here to avoid circular imports
 from app.config.config import Config
@@ -20,6 +22,7 @@ def create_app(config_class=Config):
 
     # Initialize extensions with app
     db.init_app(app)
+    # migrate.init_app(app, db)
 
     # Register blueprints
     from app.api.routes import api as api_blueprint

@@ -17,6 +17,7 @@ class User(db.Model):
     user_stripe_card = db.Column(JSONB, nullable=True)
     customer_rating = db.Column(Numeric, nullable=False, default=5.0, index=True)
     runner_rating = db.Column(Numeric, nullable=False, default=5.0, index=True)
+    stripe_customer_id = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
@@ -34,6 +35,7 @@ class User(db.Model):
             'phoneNumber': self.phone_number,
             'customerRating': float(self.customer_rating),
             'runnerRating': float(self.runner_rating),
+            'stripeCustomerId': self.stripe_customer_id,
             'createdAt': self.created_at.isoformat(),
             'updatedAt': self.updated_at.isoformat()
         }

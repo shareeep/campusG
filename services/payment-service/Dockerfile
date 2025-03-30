@@ -6,7 +6,7 @@ WORKDIR /app
 ARG REBUILD=0
 
 # Install dependencies
-COPY requirements.txt .
+COPY requirements.txt . 
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Make sure Werkzeug version is compatible with Flask
@@ -26,5 +26,8 @@ RUN mkdir -p migrations
 # Expose the port the app runs on
 EXPOSE 3000
 
-# Run app
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "2", "--threads", "4", "run:app"]
+# Make sure script is executable
+RUN chmod +x ./entrypoint.sh
+
+# Use entrypoint script to handle migrations before starting the app
+ENTRYPOINT ["./entrypoint.sh"]

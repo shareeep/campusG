@@ -46,14 +46,15 @@ export default function PaymentSettingsPage() {
     if (!user) return;
     
     try {
+      // Fix endpoint URL to match the backend - ensure consistency with "user" (singular)
       const response = await fetch(
-        `http://localhost:3001/api/user/${user.id}/payment`,
+        `http://localhost:3001/api/user/${user.id}/payment-methods`,
         {
-          method: "PUT",
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ paymentMethodId }),
+          body: JSON.stringify({ payment_method_id: paymentMethodId }),
         }
       );
       
@@ -63,12 +64,19 @@ export default function PaymentSettingsPage() {
         throw new Error(data.message || 'Failed to save payment method');
       }
       
-      // Refresh payment method data
-      const refreshResponse = await fetch(`http://localhost:3001/api/user/${user.id}/payment`);
-      const refreshData = await refreshResponse.json();
-      
-      if (refreshData.success) {
-        setPaymentMethod(refreshData.payment_info);
+      // Handle either response format - card or payment_info
+      if (data.card) {
+        setPaymentMethod(data.card);
+      } else if (data.payment_info) {
+        setPaymentMethod(data.payment_info);
+      } else {
+        // Fallback to fetching payment info using the correct endpoint
+        const refreshResponse = await fetch(`http://localhost:3001/api/user/${user.id}/payment`);
+        const refreshData = await refreshResponse.json();
+        
+        if (refreshData.success) {
+          setPaymentMethod(refreshData.payment_info);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save payment method');
@@ -143,6 +151,8 @@ export default function PaymentSettingsPage() {
             <CreditCardForm 
               onSave={savePaymentMethod}
               defaultErrorMessage={error}
+              // userId is optional, so this should work fine even if user is undefined
+              userId={user?.id}
             />
           </StripeProvider>
           <p className="mt-4 text-sm text-gray-500">

@@ -1,360 +1,398 @@
 from flask import Blueprint, request, jsonify, current_app
 import uuid
-from datetime import datetime
-# Import our stripe placeholder instead of the real stripe package
-from app.utils import stripe_placeholder as stripe
+from datetime import datetime, timezone
 from app.models.models import Payment, PaymentStatus
 from app import db
 from app.services.kafka_service import kafka_client
+import json
+from app.services.stripe_service import StripeService
+from sqlalchemy.exc import SQLAlchemyError
+import os
+import stripe
 
 api = Blueprint('api', __name__)
 
-# We'll configure Stripe in each route instead of at module level
-# to avoid the "Working outside of application context" error
-
-@api.route('/payments/authorize', methods=['POST'])
-def authorize_payment():
+@api.route('/payment/<order_id>/authorize', methods=['POST'])
+def authorize_order_payment(order_id):
     """
-    Authorize a payment with Stripe
+    Customer makes payment to CampusG's account (escrow)
     
-    Request body should contain:
+    Expected input:
     {
-        "orderId": "order-123",
-        "customerId": "customer-456",
-        "amount": 29.99
+        "customer": {
+            "clerkUserId": "user_123",
+            "stripeCustomerId": "cus_123",  // Optional
+            "userStripeCard": {
+                "payment_method_id": "pm_123"  // Only needed for direct backend confirmation
+            }
+        },
+        "order": {
+            "amount": 1000,  // Amount in cents (minimum 50)
+            "description": "Order description"  // Optional
+        },
+        "custpaymentId": "payment_123",  // Optional
+        "return_url": "https://campusg.com/order-confirmation"  // URL to redirect after payment completion
     }
-    
-    This endpoint will authorize (but not capture) a payment with Stripe.
     """
     try:
         data = request.json
-        
         if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
-            
-        order_id = data.get('orderId')
-        customer_id = data.get('customerId')
-        amount = data.get('amount')
+            return jsonify({"success": False, "description": "No data provided"}), 400
         
-        if not order_id or not customer_id or amount is None:
-            return jsonify({'success': False, 'message': 'Missing required fields'}), 400
-            
-        # Check if there's already a payment for this order
+        # Extract customer data (now including stripe_customer_id)
+        customer_data = data.get('customer')
+        if not customer_data:
+            return jsonify({"success": False, "description": "Missing customer data"}), 400
+        
+        # Extract order data
+        order_data = data.get('order')
+        if not order_data or 'amount' not in order_data:
+            return jsonify({"success": False, "description": "Missing order data or amount"}), 400
+        
+        # Custom payment ID (optional)
+        cust_payment_id = data.get('custpaymentId')
+        
+        # Get return URL (required by Stripe for redirects)
+        return_url = data.get('return_url', os.environ.get('DEFAULT_RETURN_URL', 'http://localhost:5173/'))
+        
+        # Check for existing payment
         existing_payment = Payment.query.filter_by(order_id=order_id).first()
         if existing_payment:
-            return jsonify({
-                'success': False, 
-                'message': f'Payment already exists for order {order_id} with status {existing_payment.status.name}'
-            }), 400
+            # If it's in INITIATING status, we can reuse or reset it
+            if existing_payment.status == "INITIATING":
+                # Option 1: Return the existing payment information
+                try:
+                    payment_intent = stripe.PaymentIntent.retrieve(existing_payment.payment_intent_id)
+                    
+                    return jsonify({
+                        "success": True,
+                        "description": "Using existing payment intent",
+                        "paymentId": existing_payment.payment_id,
+                        "paymentIntentId": existing_payment.payment_intent_id,
+                        "clientSecret": payment_intent.client_secret,
+                        "status": existing_payment.status
+                    }), 200
+                except stripe.error.StripeError:
+                    # If we can't retrieve the payment intent, reset it silently
+                    db.session.delete(existing_payment)
+                    db.session.commit()
+            else:
+                # If it's in any other status, return an error
+                return jsonify({
+                    "success": False,
+                    "description": f"Payment already exists for order {order_id} with status {existing_payment.status}. Use /payment/{order_id}/reset if you need to create a new payment."
+                }), 400
+        
+        # Get customer ID and payment method
+        clerk_user_id = customer_data.get('clerkUserId')
+        stripe_customer_id = customer_data.get('stripeCustomerId')  # Get this from the user data
+        
+        if not clerk_user_id:
+            return jsonify({"success": False, "description": "Missing customer ID"}), 400
             
-        # Create a new payment record with INITIATING status
-        payment = Payment(
-            payment_id=str(uuid.uuid4()),
+        # Get payment method ID directly from request
+        payment_method_id = None
+        if customer_data.get('userStripeCard') and customer_data['userStripeCard'].get('payment_method_id'):
+            payment_method_id = customer_data['userStripeCard']['payment_method_id']
+        
+        if not payment_method_id:
+            return jsonify({
+                "success": False, 
+                "description": "No payment method provided for this customer"
+            }), 400
+        
+        # Check if amount is enough
+        order_amount = order_data.get('amount', 0)
+        if order_amount < 50:
+            return jsonify({
+                "success": False,
+                "description": "Amount must be at least 50 cents (SGD 0.50)"
+            }), 400
+        
+        # Create payment intent with escrow functionality
+        description = order_data.get('description', f"Order {order_id} - CampusG Escrow")
+        result = StripeService.create_payment_intent(
+            customer_id=clerk_user_id,
+            stripe_customer_id=stripe_customer_id,  # Pass this to avoid lookup
             order_id=order_id,
-            customer_id=customer_id,
-            amount=amount,
-            status=PaymentStatus.INITIATING
+            amount=order_amount,
+            payment_method_id=payment_method_id,
+            description=description,
+            return_url=return_url  # Pass the return URL to Stripe
         )
         
-        # Save to database
-        db.session.add(payment)
-        db.session.commit()
-        
-        # Get customer's payment method from user service
-        # In a real implementation, you would call the User Service
-        
-        try:
-            # MOCK IMPLEMENTATION - ACTIVE
-            # Simulate a successful authorization
-            stripe_payment_id = f"pi_{uuid.uuid4().hex}"
-            customer_stripe_card = "mock_card_1234"
+        if result["success"]:
+            # Use custom payment ID if provided
+            if cust_payment_id:
+                payment = Payment.query.get(result["payment_id"])
+                if payment:
+                    # Update ID to custom ID
+                    payment.payment_id = cust_payment_id
+                    db.session.commit()
+                    result["payment_id"] = cust_payment_id
             
-            """
-            # REAL STRIPE IMPLEMENTATION - COMMENTED OUT
-            import stripe
-            stripe.api_key = current_app.config.get('STRIPE_API_KEY')
-            
-            # Get customer's payment method from user service
-            response = requests.get(
-                f"{current_app.config['USER_SERVICE_URL']}/api/users/{customer_id}/payment-info"
-            )
-            
-            if response.status_code != 200:
-                payment.status = PaymentStatus.FAILED
+            # Update payment status in database
+            payment = Payment.query.get(result["payment_id"])
+            if payment:
+                # Fix: Use a string directly instead of accessing .name on PaymentStatus
+                payment.status = "AUTHORIZED"  # Changed from PaymentStatus.AUTHORIZED.name
                 db.session.commit()
-                return jsonify({'success': False, 'message': 'Failed to retrieve payment information'}), 400
-                
-            payment_info = response.json()
-            
-            # Create payment intent with Stripe
-            payment_intent = stripe.PaymentIntent.create(
-                amount=int(amount * 100),  # Convert to cents
-                currency='usd',
-                payment_method=payment_info.get('payment_method_id'),
-                customer=payment_info.get('stripe_customer_id'),
-                capture_method='manual',  # Just authorize, don't capture yet
-                description=f'Order {order_id}'
-            )
-            
-            stripe_payment_id = payment_intent.id
-            customer_stripe_card = payment_info.get('last4', 'unknown')
-            """
-            
-            # Update payment record with successful authorization
-            payment.stripe_payment_id = stripe_payment_id
-            payment.customer_stripe_card = customer_stripe_card
-            payment.status = PaymentStatus.AUTHORIZED
-            payment.updated_at = datetime.utcnow()
-            
-            db.session.commit()
             
             # Publish payment authorized event
             kafka_client.publish('payment-events', {
-                'type': 'PAYMENT_AUTHORIZED',
+                'type': 'payment.authorized',
                 'payload': {
                     'orderId': order_id,
-                    'customerId': customer_id,
-                    'paymentId': payment.payment_id,
-                    'amount': float(payment.amount)
+                    'paymentId': result["payment_id"],
+                    'customerId': clerk_user_id,
+                    'amount': order_data['amount']
                 }
             })
-            
-            current_app.logger.info(f"Payment authorized for order {order_id}")
             
             return jsonify({
-                'success': True,
-                'message': 'Payment authorized successfully',
-                'paymentId': payment.payment_id,
-                'stripePaymentId': stripe_payment_id
+                "success": True,
+                "description": "Payment intent created",
+                "paymentId": result["payment_id"],
+                "paymentIntentId": result["payment_intent_id"],
+                "clientSecret": result["client_secret"],  # Return client secret for frontend confirmation
+                "status": "INITIATING"
             }), 200
-            
-        except Exception as e:
-            # Update payment status to failed
-            payment.status = PaymentStatus.FAILED
-            db.session.commit()
-            
-            current_app.logger.error(f"Payment authorization error: {str(e)}")
-            
-            # Publish payment failed event
-            kafka_client.publish('payment-events', {
-                'type': 'PAYMENT_FAILED',
-                'payload': {
-                    'orderId': order_id,
-                    'customerId': customer_id,
-                    'reason': str(e)
-                }
-            })
-            
-            return jsonify({'success': False, 'message': f"Payment authorization failed: {str(e)}"}), 400
+        else:
+            return jsonify({
+                "success": False,
+                "description": result["message"],
+                "error": result["error"]
+            }), 400
             
     except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error authorizing payment: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to authorize payment: {str(e)}"}), 500
+        current_app.logger.error(f"Error in authorize_payment: {str(e)}")
+        return jsonify({
+            "success": False,
+            "description": f"Server error: {str(e)}"
+        }), 500
 
-@api.route('/payments/revert', methods=['POST'])
-def revert_payment():
+@api.route('/payment/<order_id>/revert', methods=['POST'])
+def revert_order_payment(order_id):
     """
-    Revert a previously authorized payment
+    CampusG account reverts payment authorization and initiates a refund
     
-    Request body should contain:
+    Expected input (optional):
     {
-        "orderId": "order-123"
+        "reason": "order_canceled"
     }
-    
-    This endpoint will cancel a payment authorization.
     """
     try:
-        data = request.json
+        data = request.json or {}
+        reason = data.get('reason', 'requested_by_customer')
         
-        if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
-            
-        order_id = data.get('orderId')
-        
-        if not order_id:
-            return jsonify({'success': False, 'message': 'Missing order ID'}), 400
-            
-        # Find the payment for this order
+        # Find payment by order ID
         payment = Payment.query.filter_by(order_id=order_id).first()
-        
         if not payment:
-            return jsonify({'success': False, 'message': 'Payment not found'}), 404
+            return jsonify({"success": False, "description": "Payment not found"}), 404
             
-        if payment.status != PaymentStatus.AUTHORIZED:
-            return jsonify({'success': False, 'message': f"Payment cannot be reverted in status: {payment.status.name}"}), 400
+        # Check if payment can be reverted
+        if payment.status not in ["AUTHORIZED", "INESCROW"]:  # Changed from PaymentStatus.X.name
+            return jsonify({
+                "success": False,
+                "description": f"Payment cannot be reverted in status: {payment.status}"
+            }), 400
             
-        try:
-            # MOCK IMPLEMENTATION - ACTIVE
-            # Just update the payment status
-            
-            """
-            # REAL STRIPE IMPLEMENTATION - COMMENTED OUT
-            import stripe
-            stripe.api_key = current_app.config.get('STRIPE_API_KEY')
-            
-            # Cancel the payment intent with Stripe
-            if payment.stripe_payment_id:
-                stripe.PaymentIntent.cancel(payment.stripe_payment_id)
-            """
-            
+        # Revert payment via service
+        result = StripeService.revert_payment(
+            payment_id=payment.payment_id,
+            reason=reason
+        )
+        
+        if result["success"]:
             # Update payment status
-            payment.status = PaymentStatus.FAILED
-            payment.updated_at = datetime.utcnow()
+            payment.status = "FAILED"  # Changed from PaymentStatus.FAILED.name
             db.session.commit()
             
             # Publish payment reverted event
             kafka_client.publish('payment-events', {
-                'type': 'PAYMENT_REVERTED',
-                'payload': {
-                    'orderId': order_id,
-                    'paymentId': payment.payment_id
-                }
-            })
-            
-            current_app.logger.info(f"Payment authorization reverted for order {order_id}")
-            
-            return jsonify({
-                'success': True,
-                'message': 'Payment authorization reverted successfully'
-            }), 200
-            
-        except Exception as e:
-            current_app.logger.error(f"Error reverting payment: {str(e)}")
-            return jsonify({'success': False, 'message': f"Failed to revert payment: {str(e)}"}), 400
-            
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error reverting payment: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to revert payment: {str(e)}"}), 500
-
-@api.route('/payments/move-to-escrow', methods=['POST'])
-def move_to_escrow():
-    """
-    Move a previously authorized payment to escrow
-    
-    Request body should contain:
-    {
-        "orderId": "order-123"
-    }
-    
-    This endpoint will mark funds as being held in escrow.
-    """
-    try:
-        data = request.json
-        
-        if not data:
-            return jsonify({'success': False, 'message': 'No data provided'}), 400
-            
-        order_id = data.get('orderId')
-        
-        if not order_id:
-            return jsonify({'success': False, 'message': 'Missing order ID'}), 400
-            
-        # Find the payment for this order
-        payment = Payment.query.filter_by(order_id=order_id).first()
-        
-        if not payment:
-            return jsonify({'success': False, 'message': 'Payment not found'}), 404
-            
-        if payment.status != PaymentStatus.AUTHORIZED:
-            return jsonify({'success': False, 'message': f"Payment cannot be moved to escrow in status: {payment.status.name}"}), 400
-            
-        try:
-            # MOCK IMPLEMENTATION - ACTIVE
-            # Just update the payment status
-            
-            """
-            # REAL STRIPE IMPLEMENTATION - COMMENTED OUT
-            # In a real implementation, this might involve:
-            # 1. Capturing the payment with Stripe
-            # 2. Moving the funds to a holding account
-            import stripe
-            stripe.api_key = current_app.config.get('STRIPE_API_KEY')
-            
-            # Capture the payment intent with Stripe
-            if payment.stripe_payment_id:
-                stripe.PaymentIntent.capture(payment.stripe_payment_id)
-            """
-            
-            # Update payment status
-            payment.status = PaymentStatus.INESCROW
-            payment.updated_at = datetime.utcnow()
-            db.session.commit()
-            
-            # Publish payment in escrow event
-            kafka_client.publish('payment-events', {
-                'type': 'PAYMENT_IN_ESCROW',
+                'type': 'payment.reverted',
                 'payload': {
                     'orderId': order_id,
                     'paymentId': payment.payment_id,
+                    'customerId': payment.customer_id,
+                    'amount': float(payment.amount),
+                    'reason': reason
+                }
+            })
+            
+            return jsonify({
+                "success": True,
+                "description": "Payment reverted successfully",
+                "status": "FAILED"
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "description": result["message"],
+                "error": result["error"] 
+            }), 400
+            
+    except Exception as e:
+        current_app.logger.error(f"Error in revert_payment: {str(e)}")
+        return jsonify({
+            "success": False,
+            "description": f"Server error: {str(e)}"
+        }), 500
+
+@api.route('/payment/<order_id>/release', methods=['POST'])
+def release_order_payment(order_id):
+    """
+    CampusG account releases funds to the runner on order completion
+    
+    Expected input:
+    {
+        "runnerId": "user_456"
+    }
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"success": False, "description": "No data provided"}), 400
+            
+        runner_id = data.get('runnerId')
+        if not runner_id:
+            return jsonify({"success": False, "description": "Missing runnerId"}), 400
+            
+        # Find payment by order ID
+        payment = Payment.query.filter_by(order_id=order_id).first()
+        if not payment:
+            return jsonify({"success": False, "description": "Payment not found"}), 404
+            
+        # Check if payment can be released
+        if payment.status not in ["AUTHORIZED", "INESCROW"]:  # Changed from PaymentStatus.X.name
+            return jsonify({
+                "success": False,
+                "description": f"Payment cannot be released in status: {payment.status}"
+            }), 400
+            
+        # Release funds via service
+        result = StripeService.release_funds(
+            payment_id=payment.payment_id,
+            runner_id=runner_id
+        )
+        
+        if result["success"]:
+            # Update payment status and runner ID
+            payment.status = "RELEASED"  # Changed from PaymentStatus.RELEASED.name
+            payment.runner_id = runner_id
+            db.session.commit()
+            
+            # Publish payment released event
+            kafka_client.publish('payment-events', {
+                'type': 'payment.released',
+                'payload': {
+                    'orderId': order_id,
+                    'paymentId': payment.payment_id,
+                    'customerId': payment.customer_id,
+                    'runnerId': runner_id,
                     'amount': float(payment.amount)
                 }
             })
             
-            current_app.logger.info(f"Payment moved to escrow for order {order_id}")
-            
             return jsonify({
-                'success': True,
-                'message': 'Payment moved to escrow successfully'
+                "success": True,
+                "description": "Funds released to runner successfully",
+                "status": "RELEASED",
+                "runnerId": runner_id
             }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "description": result["message"],
+                "error": result["error"] 
+            }), 400 if result["error"] != "not_found" else 404
             
-        except Exception as e:
-            current_app.logger.error(f"Error moving payment to escrow: {str(e)}")
-            return jsonify({'success': False, 'message': f"Failed to move payment to escrow: {str(e)}"}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error in release_payment: {str(e)}")
+        return jsonify({
+            "success": False,
+            "description": f"Server error: {str(e)}"
+        }), 500
+
+@api.route('/payment/<order_id>/status', methods=['GET'])
+def get_payment_status(order_id):
+    """
+    Check the status of a payment for a specific order
+    """
+    try:
+        # Find payment by order ID
+        payment = Payment.query.filter_by(order_id=order_id).first()
+        if not payment:
+            return jsonify({"success": False, "description": "Payment not found"}), 404
             
+        # Return payment details
+        return jsonify({
+            "success": True,
+            "payment": payment.to_dict()
+        }), 200
+            
+    except Exception as e:
+        current_app.logger.error(f"Error getting payment status: {str(e)}")
+        return jsonify({
+            "success": False,
+            "description": f"Server error: {str(e)}"
+        }), 500
+
+@api.route('/payment/<payment_id>/details', methods=['GET'])
+def get_payment_details(payment_id):
+    """
+    Get detailed information about a specific payment
+    """
+    try:
+        # Find payment by payment ID
+        payment = Payment.query.get(payment_id)
+        if not payment:
+            return jsonify({"success": False, "description": "Payment not found"}), 404
+            
+        # Return payment details
+        return jsonify({
+            "success": True,
+            "payment": payment.to_dict()
+        }), 200
+            
+    except Exception as e:
+        current_app.logger.error(f"Error getting payment details: {str(e)}")
+        return jsonify({
+            "success": False,
+            "description": f"Server error: {str(e)}"
+        }), 500
+
+@api.route('/payment/<order_id>/reset', methods=['POST'])
+def reset_order_payment(order_id):
+    """
+    Reset an existing payment for an order (cancel and delete)
+    """
+    try:
+        # Find payment by order ID
+        payment = Payment.query.filter_by(order_id=order_id).first()
+        if not payment:
+            return jsonify({"success": False, "description": "No payment found for this order"}), 404
+            
+        # If payment has a Stripe payment intent, cancel it in Stripe
+        if payment.payment_intent_id:
+            try:
+                stripe.PaymentIntent.cancel(payment.payment_intent_id)
+            except stripe.error.StripeError as e:
+                current_app.logger.warning(f"Could not cancel payment intent: {str(e)}")
+        
+        # Delete the payment record
+        db.session.delete(payment)
+        db.session.commit()
+            
+        return jsonify({
+            "success": True,
+            "description": "Payment reset successfully"
+        }), 200
+        
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error moving payment to escrow: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to move payment to escrow: {str(e)}"}), 500
-
-@api.route('/payments/<payment_id>', methods=['GET'])
-def get_payment(payment_id):
-    """Get a specific payment by ID"""
-    try:
-        payment = Payment.query.get(payment_id)
-        
-        if not payment:
-            return jsonify({'success': False, 'message': 'Payment not found'}), 404
-            
+        current_app.logger.error(f"Error in reset_payment: {str(e)}")
         return jsonify({
-            'success': True,
-            'payment': payment.to_dict()
-        }), 200
-        
-    except Exception as e:
-        current_app.logger.error(f"Error getting payment {payment_id}: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to get payment: {str(e)}"}), 500
-
-@api.route('/payments', methods=['GET'])
-def get_payments():
-    """Get payments with optional filtering by order or customer"""
-    try:
-        # Query parameters
-        order_id = request.args.get('orderId')
-        customer_id = request.args.get('customerId')
-        status = request.args.get('status')
-        
-        # Build query
-        query = Payment.query
-        
-        if order_id:
-            query = query.filter_by(order_id=order_id)
-            
-        if customer_id:
-            query = query.filter_by(customer_id=customer_id)
-            
-        if status and hasattr(PaymentStatus, status):
-            query = query.filter_by(status=getattr(PaymentStatus, status))
-            
-        # Get payments
-        payments = query.all()
-        
-        return jsonify({
-            'success': True,
-            'payments': [payment.to_dict() for payment in payments]
-        }), 200
-        
-    except Exception as e:
-        current_app.logger.error(f"Error getting payments: {str(e)}")
-        return jsonify({'success': False, 'message': f"Failed to get payments: {str(e)}"}), 500
+            "success": False,
+            "description": f"Server error: {str(e)}"
+        }), 500
