@@ -309,10 +309,13 @@ services:
       - PAYMENT_SERVICE_URL=http://payment-service:3000
       - SCHEDULER_SERVICE_URL=http://scheduler-service:3000
       - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - FLASK_APP=run.py
       - FLASK_DEBUG=0  # Use this instead of FLASK_ENV=production
     depends_on:
       create-order-saga-db:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
       user-service:
         condition: service_started
