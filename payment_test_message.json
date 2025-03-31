@@ -1,0 +1,19 @@
+{
+  "type": "authorize_payment",
+  "correlation_id": "test-123",
+  "timestamp": "2025-03-31T10:30:00Z",
+  "payload": {
+    "order_id": "test-order-987",
+    "customer": {
+      "clerkUserId": "clerk_test_user_id",
+      "stripeCustomerId": "cus_S2oxjQYZK8Z1Qy",
+      "userStripeCard": {
+        "payment_method_id": "pm_card_visa"
+      }
+    },
+    "order": {
+      "amount": 1299,
+      "description": "Direct test payment"
+    }
+  }
+}

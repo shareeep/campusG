@@ -205,11 +205,11 @@ services:
       - ./.env:/app/.env
     # Add healthcheck for the service
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   order-service:
     build:
@@ -235,23 +235,27 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@payment-db:5432/payment_db
       - FLASK_APP=run.py
       - FLASK_DEBUG=0  # Use this instead of FLASK_ENV=production
-      - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092 # Added Kafka broker address
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY} # Corrected variable name and referenced from .env
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY} # Added publishable key referenced from .env
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET} # Referenced from .env
     env_file:
       - ./.env
     depends_on:
       payment-db:
         condition: service_healthy
+      kafka: # Added dependency on Kafka being healthy
+        condition: service_healthy
     ports:
       - "3003:3000"
-    volumes:
+    volumes: # Re-enabled volume mount
       - ./services/payment-service:/app  # For development - mount code changes
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   scheduler-service:
     build:

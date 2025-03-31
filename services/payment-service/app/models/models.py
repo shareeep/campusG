@@ -31,10 +31,10 @@ class Payment(db.Model):
     
     # Payment details
     amount = db.Column(Numeric(10, 2), nullable=False)
-    # Changed from db.Enum(PaymentStatus) to use string storage with Enum validation
-    status = db.Column(db.String(20), nullable=False, default=PaymentStatus.INITIATING.name, index=True)
+    # Use SQLAlchemy's Enum type for better type safety and potential DB-level constraints
+    status = db.Column(db.Enum(PaymentStatus, name='payment_status_enum', create_type=False), nullable=False, default=PaymentStatus.INITIATING, index=True)
     description = db.Column(db.String(255), nullable=True)
-    
+
     # Timestamps
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
@@ -50,7 +50,7 @@ class Payment(db.Model):
             'customerId': self.customer_id,
             'runnerId': self.runner_id,
             'amount': float(self.amount),
-            'status': self.status,  # Now returns string directly
+            'status': self.status.value, # Return the enum's value (string)
             'description': self.description,
             'paymentIntentId': self.payment_intent_id,
             'createdAt': self.created_at.isoformat(),
