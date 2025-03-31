@@ -151,8 +151,8 @@ export default function PaymentSettingsPage() {
             <CreditCardForm 
               onSave={savePaymentMethod}
               defaultErrorMessage={error}
-              // userId is optional, so this should work fine even if user is undefined
               userId={user?.id}
+              userEmail={user?.primaryEmailAddress?.emailAddress} // Add email from user profile
             />
           </StripeProvider>
           <p className="mt-4 text-sm text-gray-500">

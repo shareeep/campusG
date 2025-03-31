@@ -5,11 +5,11 @@ import { Button } from '@/components/ui/button';
 interface CreditCardFormProps {
   onSave: (paymentMethodId: string) => Promise<void>;
   defaultErrorMessage?: string | null;
-  // Make userId optional to avoid TypeScript errors
   userId?: string;
+  userEmail?: string; // Add email prop
 }
 
-export function CreditCardForm({ onSave, defaultErrorMessage, userId }: CreditCardFormProps) {
+export function CreditCardForm({ onSave, defaultErrorMessage, userId, userEmail }: CreditCardFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState<string | null>(defaultErrorMessage || null);
@@ -32,12 +32,12 @@ export function CreditCardForm({ onSave, defaultErrorMessage, userId }: CreditCa
     setError(null);
     
     try {
-      // Step 1: Create a Payment Method
+      // Step 1: Create a Payment Method - use userEmail if available
       const { error: createError, paymentMethod } = await stripe.createPaymentMethod({
         type: 'card',
         card: cardElement,
-        // You can optionally include billing details if userId is available
-        ...(userId ? { billing_details: { email: userId } } : {})
+        // Use the email address from user profile instead of ID
+        billing_details: userEmail ? { email: userEmail } : undefined
       });
       
       if (createError) {
