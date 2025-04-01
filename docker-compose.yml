@@ -198,6 +198,8 @@ services:
     depends_on:
       user-db:
         condition: service_healthy
+      kafka: # Added dependency on Kafka being healthy
+        condition: service_healthy
     ports:
       - "3001:3000"
     volumes:

@@ -51,6 +51,11 @@ def create_app():
     from app.api.user_routes import api as api_bp
     app.register_blueprint(api_bp, url_prefix='/api')
 
+    # Initialize Kafka Service
+    from app.services.kafka_service import init_kafka
+    init_kafka(app)
+    logger.info("Kafka service initialized and consumer started (if not testing).")
+
     # Initialize the database if it doesn't exist
     with app.app_context():
         try:
