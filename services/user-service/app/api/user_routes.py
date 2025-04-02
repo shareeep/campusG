@@ -24,6 +24,11 @@ load_dotenv()
 
 api = Blueprint('api', __name__)
 
+@api.route('/health', methods=['GET'])
+def health_check():
+    """Basic health check endpoint"""
+    return jsonify({'status': 'healthy'}), 200
+
 @api.route('/user/<clerk_user_id>', methods=['GET'])
 def get_user(clerk_user_id):
     """

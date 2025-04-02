@@ -7,7 +7,11 @@ ARG REBUILD=0
 
 # Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Install curl for healthcheck and then install Python dependencies
+RUN apt-get update && apt-get install -y curl && \
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install specific Werkzeug version that's compatible with Flask 2.2.3
 RUN pip install --no-cache-dir Werkzeug==2.2.3
