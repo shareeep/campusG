@@ -5,9 +5,12 @@ WORKDIR /app
 # Add build arg to force rebuild when needed
 ARG REBUILD=0
 
-# Install dependencies
+# Install system dependencies (including curl for healthcheck) and Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && \
+    apt-get install -y curl --no-install-recommends && \
+    pip install --no-cache-dir -r requirements.txt && \
+    rm -rf /var/lib/apt/lists/*
 
 # Make sure Werkzeug version is compatible with Flask
 RUN pip install --no-cache-dir Werkzeug==2.2.3

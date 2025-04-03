@@ -44,15 +44,7 @@
         "retention.ms": 604800000
       },
       "description": "Events for triggering notifications"
-    },
-    {
-      "name": "scheduler-events",
-      "partitions": 3,
-      "replicationFactor": 1,
-      "configs": {
-        "retention.ms": 604800000
-      },
-      "description": "Events related to scheduled tasks and timeouts"
     }
+    
   ]
 }
