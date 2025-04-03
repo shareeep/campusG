@@ -62,12 +62,14 @@ def create_app(config=None):
 
     # --- Register Blueprints ---
     from app.api.payment_routes import api as payment_api_blueprint
-    app.register_blueprint(payment_api_blueprint, url_prefix='/api')
-    logger.info("Registered payment API blueprint.")
+    # Register payment API blueprint at the root
+    app.register_blueprint(payment_api_blueprint) 
+    logger.info("Registered payment API blueprint at root.")
 
     from app.api.webhook_routes import webhook as webhook_blueprint
-    app.register_blueprint(webhook_blueprint, url_prefix='/api') # Register webhook blueprint
-    logger.info("Registered webhook blueprint.")
+    # Register webhook blueprint at the root
+    app.register_blueprint(webhook_blueprint) 
+    logger.info("Registered webhook blueprint at root.")
 
     # --- Application Context Setup ---
     with app.app_context():

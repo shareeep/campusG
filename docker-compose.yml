@@ -82,21 +82,21 @@ services:
       timeout: 5s
       retries: 5
 
-  scheduler-db:
-    image: postgres:14
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: scheduler_db
-    volumes:
-      - scheduler_db_data:/var/lib/postgresql/data
-    ports:
-      - "5436:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # scheduler-db:
+  #   image: postgres:14
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: scheduler_db
+  #   volumes:
+  #     - scheduler_db_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5436:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
 
   notification-db:
     image: postgres:14
@@ -211,7 +211,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s # Increased start period
 
   order-service:
     build:
@@ -226,6 +226,12 @@ services:
         condition: service_healthy
     ports:
       - "3002:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s # Increased start period
 
   payment-service:
     build:
@@ -253,23 +259,23 @@ services:
     volumes: # Re-enabled volume mount
       - ./services/payment-service:/app  # For development - mount code changes
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"] # Changed path to /health
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s # Increased start period
 
-  scheduler-service:
-    build:
-      context: ./services/scheduler-service
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@scheduler-db:5432/scheduler_db
-      # - KAFKA_BROKERS=kafka:29092
-    depends_on:
-      scheduler-db:
-        condition: service_healthy
-    ports:
-      - "3005:3000"
+  # scheduler-service:
+  #   build:
+  #     context: ./services/scheduler-service
+  #   environment:
+  #     - DATABASE_URL=postgresql://postgres:postgres@scheduler-db:5432/scheduler_db
+  #     # - KAFKA_BROKERS=kafka:29092
+  #   depends_on:
+  #     scheduler-db:
+  #       condition: service_healthy
+  #   ports:
+  #     - "3005:3000"
 
   notification-service:
     build:
@@ -285,6 +291,12 @@ services:
         condition: service_healthy
     ports:
       - "3006:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s # Increased start period
       
   timer-service:
     build:
@@ -303,6 +315,12 @@ services:
         condition: service_healthy
     ports:
       - "3007:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s # Increased start period
 
   # Saga Orchestrator Services
   create-order-saga-orchestrator:
@@ -313,7 +331,7 @@ services:
       - USER_SERVICE_URL=http://user-service:3000
       - ORDER_SERVICE_URL=http://order-service:3000
       - PAYMENT_SERVICE_URL=http://payment-service:3000
-      - SCHEDULER_SERVICE_URL=http://scheduler-service:3000
+      - TIMER_SERVICE_URL=http://timer-service:3000
       - NOTIFICATION_SERVICE_URL=http://notification-service:3000
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - FLASK_APP=run.py
@@ -329,12 +347,18 @@ services:
         condition: service_started
       payment-service:
         condition: service_started
-      scheduler-service:
+      timer-service:
         condition: service_started
       notification-service:
         condition: service_started
     ports:
       - "3101:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s # Increased start period
 
   accept-order-saga-orchestrator:
     build:
@@ -401,7 +425,7 @@ volumes:
   user_db_data:
   order_db_data:
   payment_db_data:
-  scheduler_db_data:
+  # scheduler_db_data:
   notification_db_data:
   timer_db_data:
   create_order_saga_db_data:

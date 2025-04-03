@@ -32,12 +32,10 @@ def create_app(config=None):
     
     # Register blueprints
     from app.api.notification_routes import api as notification_api
-    app.register_blueprint(notification_api, url_prefix='/api')
+    # Register blueprint at root
+    app.register_blueprint(notification_api) 
     
-    # Health check endpoint
-    @app.route('/health', methods=['GET'])
-    def health_check():
-        return {'status': 'healthy'}, 200
+    # Removed redundant /health route (it's defined in api/notification_routes.py now)
     
     # Setup database
     with app.app_context():

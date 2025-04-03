@@ -26,12 +26,10 @@ def create_app(config_class=Config):
 
     # Register blueprints
     from app.api.routes import api as api_blueprint
-    app.register_blueprint(api_blueprint, url_prefix='/api')
+    # Register blueprint at root
+    app.register_blueprint(api_blueprint) 
     
-    # Health check endpoint
-    @app.route('/health', methods=['GET'])
-    def health_check():
-        return {'status': 'healthy'}, 200
+    # Removed redundant /health route (it's defined in api/routes.py now)
     
     # Log configuration
     app.logger.info(f"Running with database: {app.config['SQLALCHEMY_DATABASE_URI']}")

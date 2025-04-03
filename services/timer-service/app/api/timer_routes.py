@@ -7,6 +7,11 @@ from app.services.kafka_service import kafka_client
 
 api = Blueprint('api', __name__)
 
+@api.route('/health', methods=['GET'])
+def health_check():
+    """Basic health check endpoint"""
+    return jsonify({'status': 'healthy'}), 200
+
 @api.route('/start-request-timer', methods=['POST'])
 def start_request_timer():
     """
