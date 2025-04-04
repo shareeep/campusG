@@ -82,22 +82,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # scheduler-db:
-  #   image: postgres:14
-  #   environment:
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: postgres
-  #     POSTGRES_DB: scheduler_db
-  #   volumes:
-  #     - scheduler_db_data:/var/lib/postgresql/data
-  #   ports:
-  #     - "5436:5432"
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 5
-
   notification-db:
     image: postgres:14
     environment:
@@ -221,11 +205,16 @@ services:
       - FLASK_APP=run.py
       - FLASK_DEBUG=0  # Use this instead of FLASK_ENV=production
       - SECRET_KEY=${SECRET_KEY:-dev-key-please-change-in-production}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092 # Added Kafka broker address
     depends_on:
       order-db:
         condition: service_healthy
+      kafka: # Added dependency on Kafka being healthy
+        condition: service_healthy
     ports:
       - "3002:3000"
+    volumes: # Added volume mount for development
+      - ./services/order_service:/app  # For development - mount code changes
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 10s
