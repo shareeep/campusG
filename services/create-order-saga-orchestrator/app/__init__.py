@@ -64,6 +64,7 @@ def create_app():
     
     @app.route('/health')
     def health_check():
+        # Disable request logging for health checks to reduce log spam
         return {'status': 'healthy'}, 200
     
     return app

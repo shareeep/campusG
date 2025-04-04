@@ -5,8 +5,16 @@ import traceback
 import os
 from sqlalchemy.exc import IntegrityError
 from app.models.models import User
+from flask import Blueprint, request, jsonify, current_app
+import uuid
+import json
+import traceback
+import os
+from sqlalchemy.exc import IntegrityError
+from app.models.models import User
 from app import db
 from datetime import datetime, timezone
+import stripe  # Import Stripe library
 
 # Import for environment variable access
 from dotenv import load_dotenv
@@ -15,6 +23,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 api = Blueprint('api', __name__)
+
+@api.route('/health', methods=['GET'])
+def health_check():
+    """Basic health check endpoint"""
+    return jsonify({'status': 'healthy'}), 200
 
 @api.route('/user/<clerk_user_id>', methods=['GET'])
 def get_user(clerk_user_id):
@@ -443,11 +456,36 @@ def handle_user_created(user_data):
             updated_at=data['updated_at'] or datetime.now(timezone.utc)
         )
         
+        # --- Stripe Customer Creation ---
+        stripe_customer_id = None
+        try:
+            # Get Stripe API key
+            stripe_api_key = current_app.config.get('STRIPE_SECRET_KEY') or os.environ.get('STRIPE_SECRET_KEY')
+            if not stripe_api_key:
+                current_app.logger.error("Stripe API key not configured. Cannot create Stripe customer.")
+            else:
+                stripe.api_key = stripe_api_key
+                # Create Stripe customer
+                customer = stripe.Customer.create(
+                    email=user.email,
+                    name=f"{user.first_name} {user.last_name}".strip(),
+                    metadata={'clerk_user_id': user.clerk_user_id}
+                )
+                stripe_customer_id = customer.id
+                user.stripe_customer_id = stripe_customer_id
+                current_app.logger.info(f"Created Stripe customer {stripe_customer_id} for user {user.clerk_user_id}")
+
+        except Exception as stripe_error:
+            current_app.logger.error(f"Failed to create Stripe customer for user {user.clerk_user_id}: {str(stripe_error)}")
+            # Continue without Stripe ID for now, maybe retry later?
+
+        # --- End Stripe Customer Creation ---
+
         db.session.add(user)
         db.session.commit()
-        
-        current_app.logger.info(f"Created new user from Clerk with ID {data['clerk_user_id']}")
-        
+
+        current_app.logger.info(f"Created new user from Clerk with ID {data['clerk_user_id']} (Stripe ID: {stripe_customer_id})")
+
     except IntegrityError as ie:
         db.session.rollback()
         current_app.logger.error(f"Integrity error creating user from Clerk event: {str(ie)}")

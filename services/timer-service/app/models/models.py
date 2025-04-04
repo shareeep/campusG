@@ -10,9 +10,9 @@ class Timer(db.Model):
     customer_id = db.Column(db.String(36), nullable=False, index=True)
     runner_id = db.Column(db.String(36), nullable=True, index=True)  # Can be null initially
     order_id = db.Column(db.String(36), nullable=False, index=True)
-    runner_accepted = db.Column(db.Boolean, nullable=False, default=False)
+    runner_accepted = db.Column(db.Boolean, nullable=False, default=False, index=True) # Added index
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
-    expires_at = db.Column(db.DateTime, nullable=False)  # When the timer expires
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)  # When the timer expires, Added index
     
     def __init__(self, **kwargs):
         # Auto-calculate expiration time (30 minutes from creation)

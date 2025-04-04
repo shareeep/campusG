@@ -231,6 +231,54 @@ docker exec -it campusg-create-order-saga-orchestrator-1 bash -c "cd /app && fla
 docker exec -it campusg-create-order-saga-orchestrator-1 bash -c "python -c 'import psycopg2; conn=psycopg2.connect(\"dbname=create_order_saga_db user=postgres password=postgres host=create-order-saga-db\"); print(\"Connected!\")'"
 ```
 
+## Payment Service Integration Testing
+
+To test the integration between the Payment Service and the Create Order Saga Orchestrator, we've added several specialized test tools:
+
+### 1. Fixed Kafka Test Producer (`fixed_kafka_test_producer.py`)
+A reliable Kafka producer script that works both inside and outside Docker containers:
+
+```bash
+# To use from host machine:
+python fixed_kafka_test_producer.py --bootstrap-servers localhost:9092 --event order.created --correlation-id YOUR_SAGA_ID --order-id YOUR_ORDER_ID
+
+# To use from inside Docker container:
+python fixed_kafka_test_producer.py --bootstrap-servers kafka:9092 --event order.created --correlation-id YOUR_SAGA_ID --order-id YOUR_ORDER_ID
+```
+
+### 2. Payment Integration Test Script (`test_payment_integration.py`)
+A comprehensive Python script that tests the full saga flow with focus on payment service integration:
+
+```bash
+# Copy to orchestrator container first:
+docker cp services/create-order-saga-orchestrator/fixed_kafka_test_producer.py campusg-create-order-saga-orchestrator-1:/app/
+docker cp services/create-order-saga-orchestrator/test_payment_integration.py campusg-create-order-saga-orchestrator-1:/app/
+
+# Run inside container:
+docker exec -it campusg-create-order-saga-orchestrator-1 bash -c "cd /app && python3 test_payment_integration.py"
+```
+
+This script:
+1. Starts a new saga via the API
+2. Simulates the full flow of events in sequence:
+   - order.created
+   - user.payment_info_retrieved
+   - payment.authorized
+   - order.status_updated
+   - timer.started
+3. Verifies the saga completes successfully
+
+### 3. Docker Container Test Script (`docker_test_payment_service.sh`)
+A shell script designed to run inside the Docker container:
+
+```bash
+# Copy to orchestrator container:
+docker cp services/create-order-saga-orchestrator/docker_test_payment_service.sh campusg-create-order-saga-orchestrator-1:/app/
+
+# Run inside container:
+docker exec -it campusg-create-order-saga-orchestrator-1 bash -c "cd /app && bash docker_test_payment_service.sh"
+```
+
 ## Next Steps
 
 - Add more comprehensive integration tests

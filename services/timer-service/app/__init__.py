@@ -38,7 +38,8 @@ def create_app(config=None):
     
     # Register blueprints
     from app.api.timer_routes import api as timer_api
-    app.register_blueprint(timer_api, url_prefix='/api')
+    # Register blueprint at root
+    app.register_blueprint(timer_api) 
     
     # Set up scheduler for timeout checks
     def setup_scheduler():
@@ -69,10 +70,7 @@ def create_app(config=None):
     # Register shutdown handler
     atexit.register(lambda: scheduler.shutdown())
     
-    # Health check endpoint
-    @app.route('/health', methods=['GET'])
-    def health_check():
-        return {'status': 'healthy'}, 200
+    # Removed redundant /health route (it's defined in api/timer_routes.py now)
     
     # Setup database
     with app.app_context():

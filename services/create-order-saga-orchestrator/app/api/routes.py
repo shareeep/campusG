@@ -6,8 +6,11 @@ import logging
 import uuid
 from app import db
 from app.models.saga_state import CreateOrderSagaState, SagaStatus, SagaStep
-saga_bp = Blueprint('saga', __name__, url_prefix='/api')
+# Remove url_prefix to register at root
+saga_bp = Blueprint('saga', __name__) 
 logger = logging.getLogger(__name__)
+
+# Removed redundant /health route (it's defined in __init__.py)
 
 @saga_bp.route('/orders', methods=['POST'])
 def create_order():
