@@ -4,6 +4,14 @@ Notification Service - Entry point for the Flask application.
 from app import create_app
 from app.api.notification_routes import start_kafka_consumer
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+)
+
+
 app = create_app()
 
 if __name__ == "__main__":
