@@ -28,8 +28,8 @@ class CompleteOrderSagaOrchestrator:
             return True
         
         logger.info("Initializing CompleteOrderSagaOrchestrator with Kafka service...")
-        from app.services.kafka_service import kafka_client  # Global Kafka client
-        kafka_svc = kafka_client
+        from app.services.kafka_service import complete_order_kafka_client  # Global Kafka client
+        kafka_svc = complete_order_kafka_client
         if not kafka_svc:
             self.init_error = "Kafka client not initialized"
             logger.error(self.init_error)
@@ -62,8 +62,8 @@ class CompleteOrderSagaOrchestrator:
         Returns:
             tuple: (success, message, saga_state)
         """
-        from app.services.kafka_service import kafka_client
-        kafka_svc = kafka_client
+        from app.services.kafka_service import complete_order_kafka_client
+        kafka_svc = complete_order_kafka_client
         
         if not self._ensure_initialized():
             logger.error(f"Cannot start saga: {self.init_error}")
@@ -108,8 +108,8 @@ class CompleteOrderSagaOrchestrator:
                 return
             logger.info(f"Order marked as DELIVERED for saga {correlation_id}")
             # Update state if needed, then trigger next step: get runner payment info.
-            from app.services.kafka_service import kafka_client
-            kafka_svc = kafka_client
+            from app.services.kafka_service import complete_order_kafka_client
+            kafka_svc = complete_order_kafka_client
             success, _ = publish_runner_payment_info_command(
                 kafka_svc,
                 saga_state.order_id,
@@ -132,14 +132,12 @@ class CompleteOrderSagaOrchestrator:
             logger.info(f"Runner payment info retrieved for saga {correlation_id}")
             
             # Step 3: Publish command to release funds via Payment Service.
-            from app.services.kafka_service import kafka_client
-            kafka_svc = kafka_client
+            from app.services.kafka_service import complete_order_kafka_client
+            kafka_svc = complete_order_kafka_client
             success, _ = publish_release_funds_command(
                 kafka_svc,
-                {
-                    'orderId': saga_state.order_id,
-                    'runnerPaymentInfo': payload.get('payment_info')
-                },
+                saga_state.order_id,
+                payload.get('payment_info'),
                 correlation_id
             )
             if not success:
@@ -159,8 +157,8 @@ class CompleteOrderSagaOrchestrator:
             logger.info(f"Funds released for saga {correlation_id}")
             
             # Step 4: Publish command to update order status to COMPLETED.
-            from app.services.kafka_service import kafka_client
-            kafka_svc = kafka_client
+            from app.services.kafka_service import complete_order_kafka_client
+            kafka_svc = complete_order_kafka_client
             success, _ = publish_update_order_status_command(
                 kafka_svc,
                 saga_state.order_id,
@@ -215,109 +213,3 @@ def init_complete_order_orchestrator():
     except Exception as e:
         logger.error(f"Error creating CompleteOrderSagaOrchestrator instance: {str(e)}")
         return None
-def _register_event_handlers(self, kafka_service):
-    """Register event handlers for complete order saga events."""
-    kafka_service.register_event_handler('order.status_updated_to_delivered', self.handle_order_delivered)
-    kafka_service.register_event_handler('runner.payment_info_retrieved', self.handle_runner_payment_info)
-    kafka_service.register_event_handler('funds_released', self.handle_funds_released)
-    kafka_service.register_event_handler('order.status_updated_to_completed', self.handle_order_completed)
-    kafka_service.register_event_handler('complete_order_failed', self.handle_complete_order_failed)
-
-def handle_order_delivered(self, correlation_id, payload):
-    """Handler for when the order status has been updated to DELIVERED."""
-    try:
-        saga_state = CompleteOrderSagaState.query.get(correlation_id)
-        if not saga_state:
-            current_app.logger.error(f"Saga state not found for correlation_id {correlation_id}")
-            return
-        current_app.logger.info(f"Order {saga_state.order_id} marked as DELIVERED for saga {correlation_id}")
-        
-        # Trigger the next step: retrieve runner payment info.
-        from app.services.kafka_service import kafka_client
-        success, _ = publish_runner_payment_info_command(
-            kafka_client,
-            saga_state.order_id,
-            correlation_id
-        )
-        if not success:
-            current_app.logger.error("Failed to publish runner payment info command")
-            saga_state.update_status(SagaStatus.FAILED, error="Failed to publish runner payment info command")
-            db.session.commit()
-    except Exception as e:
-        current_app.logger.error(f"Error handling order_delivered event: {str(e)}", exc_info=True)
-
-def handle_runner_payment_info(self, correlation_id, payload):
-    """Handler for when runner payment info is retrieved."""
-    try:
-        saga_state = CompleteOrderSagaState.query.get(correlation_id)
-        if not saga_state:
-            current_app.logger.error(f"Saga state not found for correlation_id {correlation_id}")
-            return
-        current_app.logger.info(f"Runner payment info retrieved for saga {correlation_id}")
-        
-        # Trigger the next step: release funds.
-        from app.services.kafka_service import kafka_client
-        success, _ = publish_release_funds_command(
-            kafka_client,
-            saga_state.order_id,
-            payload.get('payment_info'),
-            correlation_id
-        )
-        if not success:
-            current_app.logger.error("Failed to publish release funds command")
-            saga_state.update_status(SagaStatus.FAILED, error="Failed to publish release funds command")
-            db.session.commit()
-    except Exception as e:
-        current_app.logger.error(f"Error handling runner_payment_info event: {str(e)}", exc_info=True)
-
-def handle_funds_released(self, correlation_id, payload):
-    """Handler for when funds have been released."""
-    try:
-        saga_state = CompleteOrderSagaState.query.get(correlation_id)
-        if not saga_state:
-            current_app.logger.error(f"Saga state not found for correlation_id {correlation_id}")
-            return
-        current_app.logger.info(f"Funds released for saga {correlation_id}")
-        
-        # Trigger the final step: update order status to COMPLETED.
-        from app.services.kafka_service import kafka_client
-        success, _ = publish_update_order_status_command(
-            kafka_client,
-            saga_state.order_id,
-            'COMPLETED',
-            correlation_id
-        )
-        if not success:
-            current_app.logger.error("Failed to publish update_order_status command for COMPLETED")
-            saga_state.update_status(SagaStatus.FAILED, error="Failed to publish update_order_status command for COMPLETED")
-            db.session.commit()
-    except Exception as e:
-        current_app.logger.error(f"Error handling funds_released event: {str(e)}", exc_info=True)
-
-def handle_order_completed(self, correlation_id, payload):
-    """Handler for when the order status has been updated to COMPLETED."""
-    try:
-        saga_state = CompleteOrderSagaState.query.get(correlation_id)
-        if not saga_state:
-            current_app.logger.error(f"Saga state not found for correlation_id {correlation_id}")
-            return
-        saga_state.update_status(SagaStatus.COMPLETED)
-        saga_state.completed_at = datetime.utcnow()
-        db.session.commit()
-        current_app.logger.info(f"Complete Order Saga {correlation_id} completed for order {saga_state.order_id}")
-    except Exception as e:
-        current_app.logger.error(f"Error handling order_completed event for correlation_id {correlation_id}: {str(e)}", exc_info=True)
-
-def handle_complete_order_failed(self, correlation_id, payload):
-    """Handler for a failure in the complete order saga."""
-    try:
-        saga_state = CompleteOrderSagaState.query.get(correlation_id)
-        if not saga_state:
-            current_app.logger.error(f"Saga state not found for correlation_id {correlation_id}")
-            return
-        error_message = payload.get('error', 'Unknown error')
-        saga_state.update_status(SagaStatus.FAILED, error=f"Complete order failed: {error_message}")
-        db.session.commit()
-        current_app.logger.error(f"Complete order saga {correlation_id} failed: {error_message}")
-    except Exception as e:
-        current_app.logger.error(f"Error handling complete_order_failed event for correlation_id {correlation_id}: {str(e)}", exc_info=True)

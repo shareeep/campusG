@@ -13,4 +13,8 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 3000
 
-CMD ["flask", "run", "--host=0.0.0.0", "--port=3000"]
+# Make the entrypoint script executable
+RUN chmod +x /app/entrypoint.sh
+
+# Use entrypoint script that runs migrations before starting the app
+CMD ["/app/entrypoint.sh"]

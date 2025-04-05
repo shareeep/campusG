@@ -1,0 +1,17 @@
+Generic single-database configuration for Flask-Migrate.
+
+This directory contains database migration scripts for the Complete Order Saga Orchestrator.
+Migrations are managed by Alembic and Flask-Migrate.
+
+To create a new migration:
+```
+flask db migrate -m "Description of migration"
+```
+
+To apply migrations:
+```
+flask db upgrade
+```
+
+For more information, visit:
+https://flask-migrate.readthedocs.io/en/latest/
