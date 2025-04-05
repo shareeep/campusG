@@ -1,47 +1,65 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+import os
 import logging
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# Initialize extensions
 db = SQLAlchemy()
+migrate = Migrate()
 
-def create_app(config_class=None):
+def create_app():
+    """
+    Application factory function to create and configure the Flask app for the Complete Order Saga.
+    """
     app = Flask(__name__)
     
-    # Configure database
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:postgres@complete-order-saga-db:5432/complete_order_saga_db'
+    # Load configuration
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
+        'DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/complete_order_saga_db'
+    )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['ORDER_SERVICE_URL'] = os.getenv('ORDER_SERVICE_URL', 'http://localhost:3002')
+    app.config['PAYMENT_SERVICE_URL'] = os.getenv('PAYMENT_SERVICE_URL', 'http://localhost:3003')
+    app.config['USER_SERVICE_URL'] = os.getenv('USER_SERVICE_URL', 'http://localhost:3001')
+    # Include other service URLs as necessary, e.g., Timer Service, if needed.
+    app.config['KAFKA_BOOTSTRAP_SERVERS'] = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
     
-    # Set other configurations from environment variables
-    app.config['USER_SERVICE_URL'] = 'http://user-service:3000'
-    app.config['ORDER_SERVICE_URL'] = 'http://order-service:3000'
-    app.config['PAYMENT_SERVICE_URL'] = 'http://payment-service:3000'
-    app.config['ESCROW_SERVICE_URL'] = 'http://escrow-service:3000'
-    app.config['NOTIFICATION_SERVICE_URL'] = 'http://notification-service:3000'
-    
-    # Initialize extensions with app
+    # Initialize extensions with the app
     db.init_app(app)
+    migrate.init_app(app, db)
     
-    # Health check endpoint
+    # Import and initialize Kafka and the Complete Order Saga orchestrator
+    from app.services.kafka_service import init_complete_order_kafka, complete_order_kafka_client
+    from app.services.complete_order_saga_orchestrator import init_complete_order_orchestrator
+    
+    app.logger.info("Initializing Kafka service for Complete Order Saga...")
+    init_complete_order_kafka()  # This initializes the global complete_order_kafka_client
+    app.kafka_service = complete_order_kafka_client
+    
+    if app.kafka_service and app.kafka_service.producer:
+        app.logger.info("Kafka service initialized successfully.")
+        app.logger.info("Initializing Complete Order Saga orchestrator...")
+        app.orchestrator = init_complete_order_orchestrator()
+        if app.orchestrator:
+            app.logger.info("Complete Order Saga orchestrator initialized.")
+        else:
+            app.logger.error("Failed to initialize Complete Order Saga orchestrator.")
+    else:
+        app.logger.error("Failed to initialize Kafka service. Orchestrator initialization skipped.")
+        app.orchestrator = None  # Ensure orchestrator is None if Kafka failed
+    
+    # Register blueprints for the Complete Order Saga endpoints
+    from app.api.routes import complete_order_saga_bp
+    app.register_blueprint(complete_order_saga_bp, url_prefix='/saga/complete')
+    
     @app.route('/health', methods=['GET'])
     def health_check():
         return {'status': 'healthy'}, 200
     
-    # Log configuration
-    app.logger.info(f"Running with database: {app.config['SQLALCHEMY_DATABASE_URI']}")
-    
-    # Import and register blueprints later when implementing
-    # from app.api.routes import api as api_blueprint
-    # app.register_blueprint(api_blueprint, url_prefix='/api')
-    
-    # Create all database tables if they don't exist
-    with app.app_context():
-        db.create_all()
-
     return app
