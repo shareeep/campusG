@@ -35,4 +35,3 @@ docker-compose exec notification-service /bin/bash -c "chmod +x /app/start.sh /a
 Then restart the container:
 ```
 docker-compose restart notification-service
-```
