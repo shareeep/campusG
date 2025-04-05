@@ -3,6 +3,18 @@ from datetime import datetime
 import uuid
 import json
 
+class KafkaOffsets(db.Model):
+    """Track Kafka consumer offsets."""
+    __tablename__ = "kafka_offsets"
+    
+    topic = db.Column(db.String(255), primary_key=True)
+    partition = db.Column(db.Integer, primary_key=True)
+    offset = db.Column(db.BigInteger, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<KafkaOffset {self.topic}:{self.partition}={self.offset}>"
+
 class Notifications(db.Model):
     """Database model for notifications."""
     __tablename__ = "notifications"

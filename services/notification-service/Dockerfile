@@ -29,5 +29,10 @@ RUN mkdir -p migrations
 # Expose the port the app runs on
 EXPOSE 3000
 
-# Run app
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "2", "--threads", "4", "run:app"]
+# Copy startup scripts
+COPY start.sh /app/start.sh
+COPY poll_worker.sh /app/poll_worker.sh
+RUN chmod +x /app/start.sh /app/poll_worker.sh
+
+# Run app with both web server and poller
+CMD ["/app/start.sh"]
