@@ -33,7 +33,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-  # Individual Databases for each microservice
+  # Individual Databases for each microservice 
   user-db:
     image: postgres:14
     environment:
@@ -274,7 +274,7 @@ services:
         - REBUILD=1
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@notification-db:5432/notification_db
-      # - KAFKA_BROKERS=kafka:29092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     depends_on:
       notification-db:
         condition: service_healthy
