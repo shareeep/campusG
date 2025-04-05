@@ -10,6 +10,7 @@ from app.services.kafka_service import (
     publish_update_order_status_command,
     publish_start_timer_command
 )
+from app.services.http_client import http_client
 
 logger = logging.getLogger(__name__)
 
@@ -149,284 +150,299 @@ class CreateOrderSagaOrchestrator:
 
     def handle_order_created(self, correlation_id, payload):
         """Handle order.created event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                # Update saga state with order_id
-                order_id = payload.get('order_id')
-                if not order_id:
-                    logger.error(f"No order_id in payload for saga {correlation_id}")
-                    saga_state.update_status(SagaStatus.FAILED, error="No order_id in order.created event")
-                    db.session.commit()
-                    return
+            # Update saga state with order_id
+            order_id = payload.get('order_id')
+            if not order_id:
+                logger.error(f"No order_id in payload for saga {correlation_id}")
+                saga_state.update_status(SagaStatus.FAILED, error="No order_id in order.created event")
+                db.session.commit()
+                return
 
-                saga_state.order_id = order_id
-                saga_state.update_status(SagaStatus.STARTED, SagaStep.GET_USER_DATA)
+            saga_state.order_id = order_id
+            saga_state.update_status(SagaStatus.STARTED, SagaStep.GET_USER_DATA)
+            db.session.commit()
+
+            logger.info(f"Order created for saga {correlation_id}, order_id: {order_id}")
+
+            # Next step: Get user payment info
+            kafka_svc = current_app.kafka_service
+            success, _ = publish_get_user_payment_info_command(
+                kafka_svc,
+                saga_state.customer_id,
+                correlation_id
+            )
+
+            if not success:
+                logger.error(f"Failed to publish get_user_payment_info command for saga {correlation_id}")
+                saga_state.update_status(SagaStatus.FAILED, error="Failed to publish get_user_payment_info command")
                 db.session.commit()
 
-                logger.info(f"Order created for saga {correlation_id}, order_id: {order_id}")
-
-                # Next step: Get user payment info
-                kafka_svc = current_app.kafka_service
-                success, _ = publish_get_user_payment_info_command(
-                    kafka_svc,
-                    saga_state.customer_id,
-                    correlation_id
-                )
-
-                if not success:
-                    logger.error(f"Failed to publish get_user_payment_info command for saga {correlation_id}")
-                    saga_state.update_status(SagaStatus.FAILED, error="Failed to publish get_user_payment_info command")
-                    db.session.commit()
-
-            except Exception as e:
-                logger.error(f"Error handling order.created for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling order.created for correlation_id {correlation_id}: {str(e)}")
 
     def handle_payment_info_retrieved(self, correlation_id, payload):
         """Handle user.payment_info_retrieved event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                # Update saga state
-                saga_state.update_status(SagaStatus.STARTED, SagaStep.AUTHORIZE_PAYMENT)
+            # Update saga state
+            saga_state.update_status(SagaStatus.STARTED, SagaStep.AUTHORIZE_PAYMENT)
+            db.session.commit()
+
+            logger.info(f"User payment info retrieved for saga {correlation_id}")
+
+            # Next step: Authorize payment
+            kafka_svc = current_app.kafka_service
+            user_payment_info = payload.get('payment_info', {})
+
+            success, _ = publish_authorize_payment_command(
+                kafka_svc,
+                {
+                    'order_id': saga_state.order_id,
+                    'customer_id': saga_state.customer_id,
+                    'amount': saga_state.payment_amount,
+                    'payment_info': user_payment_info
+                },
+                correlation_id
+            )
+
+            if not success:
+                logger.error(f"Failed to publish authorize_payment command for saga {correlation_id}")
+                saga_state.update_status(SagaStatus.FAILED, error="Failed to publish authorize_payment command")
                 db.session.commit()
 
-                logger.info(f"User payment info retrieved for saga {correlation_id}")
-
-                # Next step: Authorize payment
-                kafka_svc = current_app.kafka_service
-                user_payment_info = payload.get('payment_info', {})
-
-                success, _ = publish_authorize_payment_command(
-                    kafka_svc,
-                    {
-                        'order_id': saga_state.order_id,
-                        'customer_id': saga_state.customer_id,
-                        'amount': saga_state.payment_amount,
-                        'payment_info': user_payment_info
-                    },
-                    correlation_id
-                )
-
-                if not success:
-                    logger.error(f"Failed to publish authorize_payment command for saga {correlation_id}")
-                    saga_state.update_status(SagaStatus.FAILED, error="Failed to publish authorize_payment command")
-                    db.session.commit()
-
-            except Exception as e:
-                logger.error(f"Error handling user.payment_info_retrieved for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling user.payment_info_retrieved for correlation_id {correlation_id}: {str(e)}")
 
     def handle_payment_authorized(self, correlation_id, payload):
         """Handle payment.authorized event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                # Update saga state
-                saga_state.update_status(SagaStatus.STARTED, SagaStep.UPDATE_ORDER_STATUS)
+            # Update saga state
+            saga_state.update_status(SagaStatus.STARTED, SagaStep.UPDATE_ORDER_STATUS)
+            db.session.commit()
+
+            logger.info(f"Payment authorized for saga {correlation_id}")
+
+            # Next step: Update order status to CREATED
+            kafka_svc = current_app.kafka_service
+            success, _ = publish_update_order_status_command(
+                kafka_svc,
+                saga_state.order_id,
+                'CREATED',
+                correlation_id
+            )
+
+            if not success:
+                logger.error(f"Failed to publish update_order_status command for saga {correlation_id}")
+                saga_state.update_status(SagaStatus.FAILED, error="Failed to publish update_order_status command")
                 db.session.commit()
 
-                logger.info(f"Payment authorized for saga {correlation_id}")
-
-                # Next step: Update order status to CREATED
-                kafka_svc = current_app.kafka_service
-                success, _ = publish_update_order_status_command(
-                    kafka_svc,
-                    saga_state.order_id,
-                    'CREATED',
-                    correlation_id
-                )
-
-                if not success:
-                    logger.error(f"Failed to publish update_order_status command for saga {correlation_id}")
-                    saga_state.update_status(SagaStatus.FAILED, error="Failed to publish update_order_status command")
-                    db.session.commit()
-
-            except Exception as e:
-                logger.error(f"Error handling payment.authorized for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling payment.authorized for correlation_id {correlation_id}: {str(e)}")
 
     def handle_order_status_updated(self, correlation_id, payload):
         """Handle order.status_updated event"""
-        with current_app.app_context(): # Add app context
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
+
+            # Verify expected status
+            new_status = payload.get('status')
+            if new_status != 'CREATED':
+                logger.warning(f"Unexpected status update in saga {correlation_id}: {new_status}")
+                # Continue anyway
+
+            # Update saga state
+            saga_state.update_status(SagaStatus.STARTED, SagaStep.START_TIMER)
+            db.session.commit()
+
+            logger.info(f"Order status updated to CREATED for saga {correlation_id}")
+
+            # Next step: Start order timeout timer via HTTP
+            # Generate timeout 30 minutes from now
+            timeout_at = (datetime.utcnow() + timedelta(minutes=30)).isoformat()
+
+            # Try HTTP first, fall back to Kafka if HTTP fails
             try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
-
-                # Verify expected status
-                new_status = payload.get('status')
-                if new_status != 'CREATED':
-                    logger.warning(f"Unexpected status update in saga {correlation_id}: {new_status}")
-                    # Continue anyway
-
-                # Update saga state
-                saga_state.update_status(SagaStatus.STARTED, SagaStep.START_TIMER)
-                db.session.commit()
-
-                logger.info(f"Order status updated to CREATED for saga {correlation_id}")
-
-                # Next step: Start order timeout timer
-                kafka_svc = current_app.kafka_service
-                timeout_at = (datetime.utcnow() + timedelta(minutes=30)).isoformat()
-
-                success, _ = publish_start_timer_command(
-                    kafka_svc,
-                    {
-                        'order_id': saga_state.order_id,
-                        'customer_id': saga_state.customer_id,
-                        'timeout_at': timeout_at
-                    },
+                # Use HTTP client to call timer service
+                logger.info(f"Attempting to start timer via HTTP for order {saga_state.order_id}")
+                success, response = http_client.start_timer(
+                    saga_state.order_id,
+                    saga_state.customer_id,
+                    timeout_at,
                     correlation_id
                 )
 
-                if not success:
-                    logger.error(f"Failed to publish start_timer command for saga {correlation_id}")
-                    # Not critical for the success of the saga
-                    logger.warning("Continuing without timer")
-
-                    # Mark saga as completed
-                    saga_state.update_status(SagaStatus.COMPLETED)
-                    saga_state.completed_at = datetime.utcnow()
-                    db.session.commit()
-
+                if success:
+                    logger.info(f"Timer started via HTTP for order {saga_state.order_id}: {response}")
+                    # Don't mark saga as completed yet - wait for timer.started event via Kafka
+                    return
+                else:
+                    logger.warning(f"Failed to start timer via HTTP: {response.get('error')}")
+                    logger.warning("Falling back to Kafka")
             except Exception as e:
-                logger.error(f"Error handling order.status_updated for correlation_id {correlation_id}: {str(e)}")
+                logger.error(f"Error using HTTP client for timer: {str(e)}")
+                logger.warning("Falling back to Kafka")
+
+            # Fallback: Try Kafka if HTTP failed
+            kafka_svc = current_app.kafka_service
+            
+            success, _ = publish_start_timer_command(
+                kafka_svc,
+                {
+                    'order_id': saga_state.order_id,
+                    'customer_id': saga_state.customer_id,
+                    'timeout_at': timeout_at
+                },
+                correlation_id
+            )
+
+            if not success:
+                logger.error(f"Failed to publish start_timer command for saga {correlation_id}")
+                # Not critical for the success of the saga
+                logger.warning("Continuing without timer")
+
+                # Mark saga as completed
+                saga_state.update_status(SagaStatus.COMPLETED)
+                saga_state.completed_at = datetime.utcnow()
+                db.session.commit()
+
+        except Exception as e:
+            logger.error(f"Error handling order.status_updated for correlation_id {correlation_id}: {str(e)}")
 
     def handle_timer_started(self, correlation_id, payload):
         """Handle timer.started event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                # Update saga state
-                saga_state.update_status(SagaStatus.COMPLETED)
-                saga_state.completed_at = datetime.utcnow()
-                db.session.commit()
+            # Update saga state
+            saga_state.update_status(SagaStatus.COMPLETED)
+            saga_state.completed_at = datetime.utcnow()
+            db.session.commit()
 
-                logger.info(f"Timer started and saga completed for {correlation_id}")
+            logger.info(f"Timer started and saga completed for {correlation_id}")
 
-            except Exception as e:
-                logger.error(f"Error handling timer.started for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling timer.started for correlation_id {correlation_id}: {str(e)}")
 
     def handle_order_creation_failed(self, correlation_id, payload):
         """Handle order.creation_failed event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                error_message = payload.get('error', 'Unknown error')
-                saga_state.update_status(SagaStatus.FAILED, error=f"Order creation failed: {error_message}")
-                db.session.commit()
+            error_message = payload.get('error', 'Unknown error')
+            saga_state.update_status(SagaStatus.FAILED, error=f"Order creation failed: {error_message}")
+            db.session.commit()
 
-                logger.error(f"Order creation failed for saga {correlation_id}: {error_message}")
+            logger.error(f"Order creation failed for saga {correlation_id}: {error_message}")
 
-            except Exception as e:
-                logger.error(f"Error handling order.creation_failed for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling order.creation_failed for correlation_id {correlation_id}: {str(e)}")
 
     def handle_payment_info_failed(self, correlation_id, payload):
         """Handle user.payment_info_failed event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                error_message = payload.get('error', 'Unknown error')
-                saga_state.update_status(SagaStatus.FAILED, error=f"Failed to get user payment info: {error_message}")
-                db.session.commit()
+            error_message = payload.get('error', 'Unknown error')
+            saga_state.update_status(SagaStatus.FAILED, error=f"Failed to get user payment info: {error_message}")
+            db.session.commit()
 
-                logger.error(f"User payment info retrieval failed for saga {correlation_id}: {error_message}")
+            logger.error(f"User payment info retrieval failed for saga {correlation_id}: {error_message}")
 
-            except Exception as e:
-                logger.error(f"Error handling user.payment_info_failed for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling user.payment_info_failed for correlation_id {correlation_id}: {str(e)}")
 
     def handle_payment_failed(self, correlation_id, payload):
         """Handle payment.failed event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                error_message = payload.get('error', 'Unknown error')
-                saga_state.update_status(SagaStatus.FAILED, error=f"Payment authorization failed: {error_message}")
-                db.session.commit()
+            error_message = payload.get('error', 'Unknown error')
+            saga_state.update_status(SagaStatus.FAILED, error=f"Payment authorization failed: {error_message}")
+            db.session.commit()
 
-                logger.error(f"Payment failed for saga {correlation_id}: {error_message}")
+            logger.error(f"Payment failed for saga {correlation_id}: {error_message}")
 
-            except Exception as e:
-                logger.error(f"Error handling payment.failed for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling payment.failed for correlation_id {correlation_id}: {str(e)}")
 
     def handle_order_status_update_failed(self, correlation_id, payload):
         """Handle order.status_update_failed event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                error_message = payload.get('error', 'Unknown error')
-                saga_state.update_status(SagaStatus.FAILED, error=f"Failed to update order status: {error_message}")
-                db.session.commit()
+            error_message = payload.get('error', 'Unknown error')
+            saga_state.update_status(SagaStatus.FAILED, error=f"Failed to update order status: {error_message}")
+            db.session.commit()
 
-                logger.error(f"Order status update failed for saga {correlation_id}: {error_message}")
+            logger.error(f"Order status update failed for saga {correlation_id}: {error_message}")
 
-            except Exception as e:
-                logger.error(f"Error handling order.status_update_failed for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling order.status_update_failed for correlation_id {correlation_id}: {str(e)}")
 
     def handle_timer_failed(self, correlation_id, payload):
         """Handle timer.failed event"""
-        with current_app.app_context(): # Add app context
-            try:
-                # Get the saga state
-                saga_state = CreateOrderSagaState.query.get(correlation_id)
-                if not saga_state:
-                    logger.error(f"Saga state not found for correlation_id {correlation_id}")
-                    return
+        try:
+            # Get the saga state
+            saga_state = CreateOrderSagaState.query.get(correlation_id)
+            if not saga_state:
+                logger.error(f"Saga state not found for correlation_id {correlation_id}")
+                return
 
-                error_message = payload.get('error', 'Unknown error')
-                logger.warning(f"Timer start failed for saga {correlation_id}: {error_message}")
+            error_message = payload.get('error', 'Unknown error')
+            logger.warning(f"Timer start failed for saga {correlation_id}: {error_message}")
 
-                # This is not critical for the saga completion
-                # Mark saga as completed anyway
-                saga_state.update_status(SagaStatus.COMPLETED)
-                saga_state.completed_at = datetime.utcnow()
-                db.session.commit()
+            # This is not critical for the saga completion
+            # Mark saga as completed anyway
+            saga_state.update_status(SagaStatus.COMPLETED)
+            saga_state.completed_at = datetime.utcnow()
+            db.session.commit()
 
-                logger.info(f"Saga {correlation_id} completed despite timer failure")
+            logger.info(f"Saga {correlation_id} completed despite timer failure")
 
-            except Exception as e:
-                logger.error(f"Error handling timer.failed for correlation_id {correlation_id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error handling timer.failed for correlation_id {correlation_id}: {str(e)}")
 
 
 def init_orchestrator():

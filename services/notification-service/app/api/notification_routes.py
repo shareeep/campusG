@@ -85,19 +85,19 @@ def consume_kafka_events():
     Kafka consumer function to listen to all events from all services
     and save them in the notifications database
     """
-    # Listen to ALL event topics from all services
+    # Listen to ALL event topics from all services using consistent underscore naming
     topics = [
-        "user-events", 
-        "order-events", 
-        "payment-events", 
-        "escrow-events", 
-        "scheduler-events",
-        "saga-events",
-        "notification-events",
-        "order_events",  # Include both naming conventions (with - and _)
-        "payment_events",
-        "user_events"
-        # Add other event topics as needed
+        "user_events", 
+        "order_events", 
+        "payment_events", 
+        "escrow_events",
+        "timer_events",
+        "notification_events",
+        # Command topics
+        "order_commands",
+        "user_commands",
+        "payment_commands",
+        "timer_commands"
     ]
     
     consumer = kafka_client.create_consumer(topics=topics)

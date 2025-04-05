@@ -22,16 +22,17 @@ KAFKA_POLL_INTERVAL_SECONDS = int(os.getenv('KAFKA_POLL_INTERVAL_SECONDS', '10')
 
 # Topics to monitor
 KAFKA_TOPICS = [
-    "user-events", 
-    "order-events", 
-    "payment-events", 
-    "escrow-events", 
-    "scheduler-events",
-    "saga-events",
-    "notification-events",
-    "order_events",  # Include both naming conventions (with - and _)
-    "payment_events",
-    "user_events"
+    "user_events", 
+    "order_events", 
+    "payment_events", 
+    "escrow_events", 
+    "timer_events",
+    "notification_events",
+    # Command topics
+    "order_commands",
+    "user_commands",
+    "payment_commands",
+    "timer_commands"
 ]
 
 def get_stored_offsets():

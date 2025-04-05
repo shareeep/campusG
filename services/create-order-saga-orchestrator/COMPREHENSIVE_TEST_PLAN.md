@@ -1,7 +1,7 @@
 # Comprehensive Test Plan for Create Order Saga Orchestrator
 
 ## 1. Overview
-
+BEWARE SOME INFORMATION MAY BE OUTDATED AND MAY BE CONFLICTING INFORMATION
 This document outlines a comprehensive test plan for the Create Order Saga Orchestrator, focusing on the complete flow from UI interaction through various microservices and back to the UI. The saga orchestrator follows a pattern where services communicate primarily via Kafka messages, with the exception of the Timer Service which will use HTTP.
 
 ### 1.1 Saga Flow Diagram
