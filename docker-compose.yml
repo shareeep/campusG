@@ -278,6 +278,8 @@ services:
     depends_on:
       notification-db:
         condition: service_healthy
+      kafka: # Added dependency on Kafka being healthy
+        condition: service_healthy
     ports:
       - "3006:3000"
     healthcheck:
