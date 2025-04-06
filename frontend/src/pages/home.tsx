@@ -37,10 +37,15 @@ export function HomePage() {
               <ShoppingBag className="h-6 w-6 text-blue-600" />
               <span className="text-xl font-bold text-gray-900">CampusG</span>
             </Link>
-            <div className="ml-auto">
-              <Link to="/user-select">
+            <div className="ml-auto space-x-2">
+              <Link to="/sign-in">
                 <Button variant="ghost" className="text-gray-600 hover:text-gray-900">
                   Sign In
+                </Button>
+              </Link>
+              <Link to="/sign-up">
+                <Button variant="secondary" className="text-blue-600 hover:bg-blue-50">
+                  Sign Up
                 </Button>
               </Link>
             </div>
@@ -71,7 +76,7 @@ export function HomePage() {
             <p className="text-xl md:text-2xl mb-8 opacity-90">
               Order from any store near campus and get it delivered by fellow students
             </p>
-            <Link to="/user-select">
+            <Link to="/sign-up">
               <Button size="lg" className="min-w-[200px] bg-white text-blue-600 hover:bg-gray-100">
                 Get Started
                 <ArrowRight className="ml-2 h-5 w-5" />
@@ -142,7 +147,7 @@ export function HomePage() {
             <p className="text-xl text-gray-600 mb-8">
               Make up to $200/month delivering food to fellow students between classes
             </p>
-            <Link to="/user-select">
+            <Link to="/sign-up">
               <Button size="lg" className="bg-green-600 hover:bg-green-700 text-white">
                 Start Earning Today
               </Button>

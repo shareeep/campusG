@@ -4,7 +4,6 @@ import { SignUpPage } from '@/pages/auth/sign-up';
 import { RootLayout } from '@/components/layout/root-layout';
 import { RoleGuard } from '@/components/role/role-guard';
 import { RoleSelector } from '@/components/role/role-selector';
-import { UserSelectPage } from '@/pages/user-select';
 import { HomePage } from '@/pages/home';
 import { ProfilePage } from '@/pages/profile';
 import { OrderFormPage } from '@/pages/customer/order-form';
@@ -33,17 +32,28 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PublicHome() {
+  const { isSignedIn } = useAuth();
+  
+  if (isSignedIn) {
+    return <Navigate to="/role-select" replace />;
+  }
+  
+  return <HomePage />;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
       {/* Public auth routes */}
       <Route path="/sign-in" element={<SignInPage />} />
       <Route path="/sign-up" element={<SignUpPage />} />
-      <Route path="/user-select" element={<UserSelectPage />} />
+      
+      {/* Public home page */}
+      <Route path="/" element={<PublicHome />} />
       
       {/* Protected routes */}
       <Route element={<RequireAuth><RootLayout /></RequireAuth>}>
-        <Route path="/" element={<HomePage />} />
         <Route path="/role-select" element={<RoleSelector />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/:id" element={<ProfilePage />} />

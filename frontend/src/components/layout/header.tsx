@@ -2,17 +2,18 @@ import { ShoppingBag, Bike, History, LogOut, User } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useRole } from '@/lib/hooks/use-role';
-import { useUser } from '@/lib/hooks/use-user';
+import { useAuth, useUser as useClerkUser } from '@clerk/clerk-react';
 import { NotificationDropdown } from '@/components/notifications/notification-dropdown';
 
 export function Header() {
   const navigate = useNavigate();
-  const { role, switchRole } = useRole();
-  const { name, clearUser } = useUser();
+  const { role } = useRole();
+  const { signOut } = useAuth();
+  const { user } = useClerkUser();
 
-  const handleLogout = () => {
-    clearUser();
-    navigate('/user-select');
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/');
   };
 
   const isCustomer = role === 'customer';
@@ -89,10 +90,13 @@ export function Header() {
           
           <div className="flex items-center space-x-4">
             <NotificationDropdown />
-            <Link to="/profile" className={`text-sm font-medium ${hoverColor}`}>
-              <User className="h-4 w-4" />
-            </Link>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
+            <div className="flex items-center">
+              <Button variant="ghost" size="sm" className={`flex items-center ${hoverColor}`} onClick={() => navigate('/profile')}>
+                <User className="h-4 w-4 mr-2" />
+                <span className="text-sm">{user?.firstName || 'Profile'}</span>
+              </Button>
+            </div>
+            <Button variant="ghost" size="sm" onClick={handleLogout} title="Sign Out">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
