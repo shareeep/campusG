@@ -106,7 +106,7 @@ export function ProfilePage() {
           {/* Payment Methods */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Payment Methods</h2>
+              <h2 className="text-lg font-semibold">Payment Method</h2>
             {!showAddCard && !(backendUser?.userStripeCard || backendUser?.user_stripe_card) && (
                 <Button 
                   variant="secondary" 
