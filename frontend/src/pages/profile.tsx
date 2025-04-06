@@ -210,9 +210,6 @@ export function ProfilePage() {
             <div className="flex flex-wrap gap-2">
               <UserProfile />
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Changes made here will be synchronized with our backend services.
-            </p>
           </div>
           
           {/* Backend Sync Status - Moved below Account Management */}
