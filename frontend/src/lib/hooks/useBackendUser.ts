@@ -1,5 +1,5 @@
 import { useUser } from '@clerk/clerk-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getUserByClerkId, createUserFromClerk, updateUserFromClerk } from '../api-client';
 import type { BackendUser } from '../types/user';
 
@@ -16,17 +16,41 @@ export function useBackendUser() {
   const [error, setError] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
 
-  // Function to sync user data
+  // Track sync timeout with a ref
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Function to sync user data with timeout protection
   async function syncUser() {
     if (!clerkUser || !isSignedIn) return null;
+    
+    // If already in a loading state, clear any existing timeout
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
+    }
     
     setLoading(true);
     setSyncState('syncing');
     setError(null);
     
+    // Set a timeout to prevent infinite loading state
+    syncTimeoutRef.current = setTimeout(() => {
+      if (syncState === 'syncing') {
+        console.error('Sync operation timed out after 15 seconds');
+        setError('Sync operation timed out. Please try again.');
+        setSyncState('error');
+        setLoading(false);
+      }
+    }, 15000); // 15 second timeout
+    
+    console.log("Syncing user data from Clerk to backend...", { clerkUserId: clerkUser.id });
     try {
       // First try to fetch the user
       let user = await getUserByClerkId(clerkUser.id);
+      
+      // Log user data to debug card info
+      console.log('User data from backend before processing:', user);
+      console.log('Has Stripe Card:', Boolean(user?.userStripeCard || user?.user_stripe_card));
       
       if (user) {
         // User exists, check if needs updating
@@ -50,9 +74,23 @@ export function useBackendUser() {
         user = await createUserFromClerk(clerkUser);
       }
       
-      setBackendUser(user);
-      setSyncState('synced');
-      return user;
+      // Reset sync timeout
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
+      
+      console.log('Final user data being set in state:', user);
+      console.log('Final user card data:', user?.userStripeCard || user?.user_stripe_card);
+      
+      // Ensure we have a valid user object before updating state
+      if (user) {
+        setBackendUser(user);
+        setSyncState('synced');
+        return user;
+      } else {
+        throw new Error('Backend returned empty user data');
+      }
     } catch (err: unknown) {
       console.error('Error syncing with backend:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to sync user';
@@ -60,6 +98,11 @@ export function useBackendUser() {
       setSyncState('error');
       return null;
     } finally {
+      // Clean up timeout if it exists
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
       setLoading(false);
     }
   }
@@ -71,17 +114,26 @@ export function useBackendUser() {
       return;
     }
     
+    // Initial load of user data
     syncUser();
+    
+    // Cleanup on unmount
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
+    };
   }, [
     clerkUser, 
     isSignedIn, 
     isLoaded, 
     // Add dependencies to detect user profile changes
-  clerkUser?.firstName,
-  clerkUser?.lastName,
-  clerkUser?.username,
-  clerkUser?.primaryEmailAddress?.emailAddress,
-  clerkUser?.primaryPhoneNumber?.phoneNumber
+    clerkUser?.firstName,
+    clerkUser?.lastName,
+    clerkUser?.username,
+    clerkUser?.primaryEmailAddress?.emailAddress,
+    clerkUser?.primaryPhoneNumber?.phoneNumber
   ]);
   
   return { 

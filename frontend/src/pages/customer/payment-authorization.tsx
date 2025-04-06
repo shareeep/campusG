@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CreditCard, Lock, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { useBackendUser } from '@/lib/hooks/useBackendUser';
+import { processPayment } from '@/lib/api-client';
+import { handlePaymentResponse } from '@/components/PaymentHandler';
 
 interface PaymentMethod {
   id: string;
@@ -15,14 +18,45 @@ export function PaymentAuthorizationPage() {
   const { orderId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { backendUser, clerkUser } = useBackendUser();
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
-  // Mock saved payment methods
-  const savedMethods: PaymentMethod[] = [
-    { id: '1', type: 'card', last4: '4242', brand: 'visa' },
-    { id: '2', type: 'card', last4: '5555', brand: 'mastercard' }
-  ];
+  // Helper function to extract card data consistently regardless of format
+  const getCardData = () => {
+    const card = backendUser?.userStripeCard || backendUser?.user_stripe_card;
+    if (!card) return null;
+    
+    const paymentMethodId = 
+      card.paymentMethodId || 
+      card.payment_method_id || 
+      '';
+      
+    // Only return data if we have a valid payment method ID
+    if (!paymentMethodId) return null;
+    
+    return {
+      id: paymentMethodId,
+      type: 'card' as const, // Use const assertion to ensure literal type
+      last4: card.last4 || card.last_four || '•••',
+      brand: card.brand || card.card_type || 'Card'
+    };
+  };
+
+  // Check if there's a valid stored payment method
+  const cardData = getCardData();
+  const hasStoredCard = cardData !== null && 
+                        (backendUser?.stripeCustomerId || backendUser?.stripe_customer_id);
+  
+  const savedMethods: PaymentMethod[] = hasStoredCard && cardData ? [cardData] : [];
+  
+  // Auto-select the payment method if there's only one
+  useEffect(() => {
+    if (savedMethods.length === 1 && !selectedMethod) {
+      setSelectedMethod(savedMethods[0].id);
+    }
+  }, [savedMethods, selectedMethod]);
 
   const handlePaymentAuthorization = async () => {
     if (!selectedMethod) {
@@ -34,14 +68,35 @@ export function PaymentAuthorizationPage() {
       return;
     }
 
+    if (!clerkUser?.id || !orderId) {
+      toast({
+        title: "Missing Information",
+        description: "User ID or Order ID is missing.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsProcessing(true);
+    setPaymentError(null);
 
     try {
-      // Simulated payment authorization
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Process the payment with Stripe through our backend
+      const amount = 1299; // This would normally come from the order details
+      const paymentResponse = await processPayment(clerkUser.id, orderId, amount);
+      
+      if (paymentResponse.error) {
+        throw new Error(paymentResponse.error);
+      }
 
-      // Simulated escrow transfer
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Handle 3D Secure authentication if required
+      if (paymentResponse.requires_action && paymentResponse.client_secret) {
+        const result = await handlePaymentResponse(paymentResponse);
+        
+        if (!result.success) {
+          throw new Error(result.error || "Payment authentication failed");
+        }
+      }
 
       toast({
         title: "Payment Secured",
@@ -50,9 +105,11 @@ export function PaymentAuthorizationPage() {
 
       navigate(`/customer/order/${orderId}/tracking`);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown payment error";
+      setPaymentError(errorMessage);
       toast({
         title: "Payment Failed",
-        description: "There was an error processing your payment. Please try again.",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -100,15 +157,30 @@ export function PaymentAuthorizationPage() {
               </div>
             </div>
 
+            {savedMethods.length === 0 && (
+              <div className="text-center py-8 text-gray-500 border rounded-md mb-6">
+                <CreditCard className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+                <p>No payment methods available</p>
+              </div>
+            )}
+
             <div className="border-t pt-6">
               <Button
-                onClick={() => navigate('/customer/payment-methods/new')}
-                variant="outline"
+                onClick={() => navigate('/profile')}
+                variant="secondary"
                 className="w-full"
               >
-                Add New Payment Method
+                Manage Payment Methods
               </Button>
             </div>
+
+            {paymentError && (
+              <div className="rounded-md bg-red-50 p-3">
+                <div className="flex">
+                  <div className="text-sm text-red-700">{paymentError}</div>
+                </div>
+              </div>
+            )}
 
             <div className="bg-blue-50 p-4 rounded-lg flex items-start">
               <Lock className="h-5 w-5 text-blue-500 mr-3 mt-0.5" />
@@ -121,7 +193,7 @@ export function PaymentAuthorizationPage() {
             <Button
               onClick={handlePaymentAuthorization}
               className="w-full"
-              disabled={!selectedMethod || isProcessing}
+              disabled={!selectedMethod || isProcessing || savedMethods.length === 0}
             >
               {isProcessing ? (
                 <>

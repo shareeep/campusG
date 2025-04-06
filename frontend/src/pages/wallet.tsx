@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Wallet, CreditCard, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Wallet, CreditCard, ArrowUpRight, ArrowDownLeft, Plus } from 'lucide-react';
 import { getWallet } from '@/lib/api';
 import { useUser } from '@/lib/hooks/use-user';
 import type { Wallet as WalletType } from '@/lib/types';
+import { CreditCardForm } from '@/components/payments/CreditCardForm';
+import { SavedCardDisplay } from '@/components/payments/SavedCardDisplay';
+import { useBackendUser } from '@/lib/hooks/useBackendUser';
+import { savePaymentMethod, deletePaymentMethod } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
 
 export function WalletPage() {
   const { id: userId } = useUser();
+  const { backendUser, clerkUser } = useBackendUser();
   const [wallet, setWallet] = useState<WalletType | null>(null);
+  const [showAddCard, setShowAddCard] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchWallet = async () => {
@@ -49,6 +58,86 @@ export function WalletPage() {
               ${wallet.balance.toFixed(2)}
             </div>
           </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Payment Methods</h2>
+            {!showAddCard && !backendUser?.user_stripe_card && (
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                className="flex items-center gap-1"
+                onClick={() => setShowAddCard(true)}
+              >
+                <Plus className="h-4 w-4" />
+                Add Card
+              </Button>
+            )}
+          </div>
+
+          {showAddCard ? (
+            <div className="mb-6">
+              <CreditCardForm 
+                onSave={async (paymentMethodId) => {
+                  if (!clerkUser?.id) return;
+                  setError(null);
+                  try {
+                    const success = await savePaymentMethod(clerkUser.id, paymentMethodId);
+                    if (success) {
+                      setShowAddCard(false);
+                    } else {
+                      setError('Failed to save payment method');
+                    }
+                  } catch (err) {
+                    setError('An error occurred while saving your card');
+                    console.error(err);
+                  }
+                }}
+                defaultErrorMessage={error}
+                userEmail={clerkUser?.primaryEmailAddress?.emailAddress}
+              />
+            </div>
+          ) : backendUser?.user_stripe_card ? (
+            <div className="mb-4">
+              <SavedCardDisplay 
+                last4={backendUser.user_stripe_card.last_four}
+                brand={backendUser.user_stripe_card.card_type}
+                expiryMonth={backendUser.user_stripe_card.expiry_month}
+                expiryYear={backendUser.user_stripe_card.expiry_year}
+                onDelete={async () => {
+                  if (!clerkUser?.id) return;
+                  setIsDeleting(true);
+                  try {
+                    const success = await deletePaymentMethod(clerkUser.id);
+                    if (!success) {
+                      setError('Failed to delete payment method');
+                    }
+                  } catch (err) {
+                    setError('An error occurred while deleting your card');
+                    console.error(err);
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+                isDeleting={isDeleting}
+              />
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 border rounded-md">
+              <CreditCard className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+              <p>No payment methods saved</p>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                className="mt-4 flex items-center gap-1 mx-auto"
+                onClick={() => setShowAddCard(true)}
+              >
+                <Plus className="h-4 w-4" />
+                Add Card
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-6">

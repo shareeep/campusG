@@ -3,16 +3,19 @@ import { AppRoutes } from '@/routes';
 import { ToastProvider } from '@/components/ui/toast-provider';
 import { ClerkProvider } from './providers/ClerkProvider';
 import { UserSyncProvider } from './providers/UserSyncProvider';
+import { StripeProvider } from './providers/StripeProvider';
 
 function App() {
   return (
     <ClerkProvider>
       <UserSyncProvider>
-        <ToastProvider>
-          <Router>
-            <AppRoutes />
-          </Router>
-        </ToastProvider>
+        <StripeProvider>
+          <ToastProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </ToastProvider>
+        </StripeProvider>
       </UserSyncProvider>
     </ClerkProvider>
   );

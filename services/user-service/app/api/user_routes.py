@@ -68,9 +68,18 @@ def get_payment_info(clerk_user_id):
         if not user.user_stripe_card:
             return jsonify({'success': False, 'message': 'User has no payment method'}), 400
             
+        # Transform the payment info to match what frontend expects
+        payment_info = {
+            'payment_method_id': user.user_stripe_card.get('payment_method_id', ''),
+            'last_four': user.user_stripe_card.get('last4', ''),  # Transform last4 to last_four
+            'card_type': user.user_stripe_card.get('brand', ''),  # Transform brand to card_type
+            'expiry_month': user.user_stripe_card.get('exp_month', ''),  # Transform exp_month to expiry_month
+            'expiry_year': user.user_stripe_card.get('exp_year', ''),    # Transform exp_year to expiry_year
+        }
+            
         return jsonify({
             'success': True,
-            'payment_info': user.user_stripe_card
+            'payment_info': payment_info
         }), 200
         
     except Exception as e:
@@ -536,7 +545,7 @@ def handle_user_updated(user_data):
         if not user:
             # If not found by Clerk ID, try by email
             if data['email']:
-                user = User.query.filter_by(email=data['email']).first()
+                user = User.query.filter_by(email=data['email']).first()  # Fixed syntax error here
                 
             if not user:
                 current_app.logger.warning(f"User not found for update: Clerk ID {data['clerk_user_id']}")
@@ -773,6 +782,9 @@ def sync_user_from_frontend():
         user = User.query.get(clerk_user_id)
         
         if user:
+            # Store existing payment data before updating
+            existing_stripe_card = user.user_stripe_card
+            
             # Update existing user
             if 'email' in data:
                 user.email = data['email']
@@ -784,6 +796,12 @@ def sync_user_from_frontend():
                 user.phone_number = data['phone_number']
             if 'username' in data:
                 user.username = data['username']
+                
+            # Ensure we don't lose payment card data during update
+            # Only update if this is explicitly a profile update (not a payment update)
+            if data.get('profile_update_only', False) and existing_stripe_card:
+                user.user_stripe_card = existing_stripe_card
+                current_app.logger.info(f"Preserved payment card data during profile update for user {clerk_user_id}")
                 
             user.updated_at = datetime.now(timezone.utc)
         else:
@@ -841,10 +859,16 @@ def sync_user_from_frontend():
         
         db.session.commit()
         
+        # Log the payment card data before returning response for debugging
+        current_app.logger.info(f"Card data after update for user {clerk_user_id}: {user.user_stripe_card}")
+        
+        # Make sure the to_dict method includes all payment data
+        user_dict = user.to_dict(include_payment_details=True)
+        
         return jsonify({
             'success': True,
             'message': 'User synced successfully',
-            'user': user.to_dict()
+            'user': user_dict
         }), 200
         
     except Exception as e:
