@@ -18,11 +18,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isSignedIn, isLoaded } = useAuth();
   
   if (!isLoaded) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
   
   if (!isSignedIn) {
@@ -32,8 +28,23 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function LoadingScreen() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Loading CampusG...</p>
+      </div>
+    </div>
+  );
+}
+
 function PublicHome() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, isLoaded } = useAuth();
+  
+  if (!isLoaded) {
+    return <LoadingScreen />;
+  }
   
   if (isSignedIn) {
     return <Navigate to="/role-select" replace />;
@@ -52,9 +63,15 @@ export function AppRoutes() {
       {/* Public home page */}
       <Route path="/" element={<PublicHome />} />
       
-      {/* Protected routes */}
+      {/* Role selector - moved outside of RootLayout */}
+      <Route path="/role-select" element={
+        <RequireAuth>
+          <RoleSelector />
+        </RequireAuth>
+      } />
+      
+      {/* Protected routes with layout */}
       <Route element={<RequireAuth><RootLayout /></RequireAuth>}>
-        <Route path="/role-select" element={<RoleSelector />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/:id" element={<ProfilePage />} />
 
