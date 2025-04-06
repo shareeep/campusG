@@ -47,8 +47,8 @@ export function ProfilePage() {
 
   if (!isLoaded || !user) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="max-w-4xl mx-auto text-center">
+      <div className="container mx-auto px-2 sm:px-4 md:px-6 py-3 sm:py-6">
+        <div className="w-full sm:max-w-4xl mx-auto text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" />
           <p className="mt-2">Loading profile...</p>
         </div>
@@ -57,33 +57,33 @@ export function ProfilePage() {
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="max-w-4xl mx-auto">
+    <div className="container mx-auto px-2 sm:px-4 md:px-6 py-3 sm:py-6">
+      <div className="w-full sm:max-w-4xl mx-auto">
         {/* Profile Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow-sm p-3 sm:p-4 md:p-6 mb-4 sm:mb-6">
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 mb-4 sm:mb-6">
             {user.hasImage ? (
               <img 
                 src={user.imageUrl} 
                 alt={user.fullName || 'Profile'} 
-                className="h-20 w-20 rounded-full object-cover"
+                className="h-16 w-16 sm:h-20 sm:w-20 rounded-full object-cover"
               />
             ) : (
-              <div className="h-20 w-20 bg-blue-100 rounded-full flex items-center justify-center">
-                <User className="h-10 w-10 text-blue-600" />
+              <div className="h-16 w-16 sm:h-20 sm:w-20 bg-blue-100 rounded-full flex items-center justify-center">
+                <User className="h-8 w-8 sm:h-10 sm:w-10 text-blue-600" />
               </div>
             )}
-            <div>
-              <h1 className="text-2xl font-bold">{user.fullName}</h1>
-              <div className="text-sm text-gray-600 mt-1">
-                <div className="flex items-center gap-1">
-                  <Mail className="h-4 w-4" />
-                  <span>{user.primaryEmailAddress?.emailAddress}</span>
+            <div className="text-center sm:text-left mt-2 sm:mt-0">
+              <h1 className="text-xl sm:text-2xl font-bold">{user.fullName}</h1>
+              <div className="text-sm text-gray-600 mt-1 overflow-hidden">
+                <div className="flex items-center gap-1 justify-center sm:justify-start">
+                  <Mail className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate">{user.primaryEmailAddress?.emailAddress}</span>
                 </div>
                 {user.primaryPhoneNumber && (
-                  <div className="flex items-center gap-1 mt-1">
-                    <Phone className="h-4 w-4" />
-                    <span>{user.primaryPhoneNumber.phoneNumber}</span>
+                  <div className="flex items-center gap-1 mt-1 justify-center sm:justify-start">
+                    <Phone className="h-4 w-4 flex-shrink-0" />
+                    <span className="truncate">{user.primaryPhoneNumber.phoneNumber}</span>
                   </div>
                 )}
               </div>
@@ -91,8 +91,8 @@ export function ProfilePage() {
           </div>
 
           {/* Current Role */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold mb-2">Current Role</h2>
+          <div className="mb-4 sm:mb-6">
+            <h2 className="text-base sm:text-lg font-semibold mb-2">Current Role</h2>
             <div className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
               role === 'customer' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
             }`}>
@@ -104,9 +104,9 @@ export function ProfilePage() {
           </div>
 
           {/* Payment Methods */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Payment Method</h2>
+          <div className="mb-4 sm:mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-4 gap-2">
+              <h2 className="text-base sm:text-lg font-semibold">Payment Method</h2>
             {!showAddCard && !(backendUser?.userStripeCard || backendUser?.user_stripe_card) && (
                 <Button 
                   variant="secondary" 
@@ -205,17 +205,19 @@ export function ProfilePage() {
           </div>
 
           {/* Account Management */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold mb-3">Account Management</h2>
-            <div className="flex flex-wrap gap-2">
-              <UserProfile />
+          <div className="mb-4 sm:mb-6">
+            <h2 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">Account Management</h2>
+            <div className="w-full rounded-xl overflow-hidden border border-gray-100">
+              <div className="w-full transform scale-[0.97] origin-top-left sm:scale-100">
+                <UserProfile />
+              </div>
             </div>
           </div>
           
           {/* Backend Sync Status - Moved below Account Management */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Backend Sync Status</h2>
+          <div className="mb-4 sm:mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
+              <h2 className="text-base sm:text-lg font-semibold">Backend Sync Status</h2>
               <Button 
                 variant="secondary" 
                 size="sm" 
@@ -227,10 +229,10 @@ export function ProfilePage() {
                 Sync Now
               </Button>
             </div>
-            <div className="mt-2 p-3 bg-gray-50 rounded-md">
-              <div className="text-sm flex items-center">
+            <div className="mt-2 p-2 sm:p-3 bg-gray-50 rounded-md">
+              <div className="text-sm flex flex-wrap items-center">
                 <span className="font-medium">Status:</span>
-                <span className="ml-2">
+                <span className="ml-2 break-words">
                   {syncState === 'synced' && (
                     <span className="text-green-600">Synced with backend</span>
                   )}
@@ -247,24 +249,25 @@ export function ProfilePage() {
               </div>
               {backendUser && (
                 <div className="mt-2 text-xs text-gray-600">
-                  <p>Backend data reflects: {backendUser.first_name} {backendUser.last_name} ({backendUser.email})</p>
+                  <p className="break-words">Backend data reflects: {backendUser.first_name} {backendUser.last_name}</p>
+                  <p className="truncate">({backendUser.email})</p>
                 </div>
               )}
             </div>
           </div>
           
           {/* Debug Information - Simplified */}
-          <details className="p-3 border rounded-md mb-4 text-xs bg-gray-50">
+          <details className="p-2 sm:p-3 border rounded-md mb-4 text-xs bg-gray-50">
             <summary className="font-semibold cursor-pointer">Debug Information</summary>
-            <div className="mt-2">
-              <p>Stripe Customer ID: {backendUser?.stripeCustomerId || backendUser?.stripe_customer_id || 'Not set'}</p>
-              <p>Card Data: {backendUser?.userStripeCard ? JSON.stringify(backendUser.userStripeCard) : 'None'}</p>
-              <p>Sync State: {syncState}</p>
-              <p>Clerk User ID: {clerkUser?.id || 'Not available'}</p>
-              <p>API URL: {import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:3001/api'}</p>
-              <p>Error: {error || 'None'}</p>
+            <div className="mt-2 overflow-hidden">
+              <p className="break-words">Stripe Customer ID: {backendUser?.stripeCustomerId || backendUser?.stripe_customer_id || 'Not set'}</p>
+              <p className="break-words overflow-hidden">Card Data: {backendUser?.userStripeCard ? JSON.stringify(backendUser.userStripeCard).substring(0, 100) + '...' : 'None'}</p>
+              <p className="break-words">Sync State: {syncState}</p>
+              <p className="break-words">Clerk User ID: {clerkUser?.id || 'Not available'}</p>
+              <p className="break-words">API URL: {import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:3001/api'}</p>
+              <p className="break-words">Error: {error || 'None'}</p>
             </div>
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
               <button 
                 className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs"
                 onClick={() => {
