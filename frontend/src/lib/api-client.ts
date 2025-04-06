@@ -129,16 +129,18 @@ export async function updateUserFromClerk(clerkUserId: string, clerkUser: ClerkU
     const phone = clerkUser.phoneNumbers?.[0]?.phoneNumber || '';
     
     const userData = {
+      clerk_user_id: clerkUserId,
       email,
       first_name: clerkUser.firstName || '',
       last_name: clerkUser.lastName || '',
       phone_number: phone,
-      username: clerkUser.username || '',
+      username: clerkUser.username || email.split('@')[0],
     };
     
+    // Use the sync-from-frontend endpoint which supports POST for both creating and updating users
     const response = await apiRequest<{ user: BackendUser, success: boolean }>(
-      `/user/${clerkUserId}`,
-      'PUT',
+      `/user/sync-from-frontend`,
+      'POST',
       { body: userData }
     );
     

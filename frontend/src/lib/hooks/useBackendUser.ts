@@ -37,6 +37,7 @@ export function useBackendUser() {
           user.email !== primaryEmail ||
           user.first_name !== clerkUser.firstName ||
           user.last_name !== clerkUser.lastName ||
+          (clerkUser.username && user.username !== clerkUser.username) ||
           (primaryPhone && user.phone_number !== primaryPhone);
           
         if (needsUpdate) {
@@ -63,7 +64,7 @@ export function useBackendUser() {
     }
   }
   
-  // Sync when auth state changes
+  // Sync when auth state changes or when clerk user data changes
   useEffect(() => {
     // Only attempt to fetch if the user is signed in and Clerk has loaded
     if (!isLoaded || !isSignedIn || !clerkUser) {
@@ -71,7 +72,17 @@ export function useBackendUser() {
     }
     
     syncUser();
-  }, [clerkUser, isSignedIn, isLoaded]);
+  }, [
+    clerkUser, 
+    isSignedIn, 
+    isLoaded, 
+    // Add dependencies to detect user profile changes
+  clerkUser?.firstName,
+  clerkUser?.lastName,
+  clerkUser?.username,
+  clerkUser?.primaryEmailAddress?.emailAddress,
+  clerkUser?.primaryPhoneNumber?.phoneNumber
+  ]);
   
   return { 
     backendUser, 

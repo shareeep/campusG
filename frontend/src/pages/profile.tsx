@@ -1,13 +1,16 @@
 import { useUser, UserProfile } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
-import { User, Mail, Phone } from 'lucide-react';
+import { User, Mail, Phone, RefreshCw } from 'lucide-react';
 import { useRole } from '@/lib/hooks/use-role';
+import { useUserSync } from '@/providers/UserSyncProvider';
+import { Button } from '@/components/ui/button';
 
 export function ProfilePage() {
   const { user, isLoaded, isSignedIn } = useUser();
   const navigate = useNavigate();
   const { role } = useRole();
+  const { backendUser, syncState, syncUser, loading } = useUserSync();
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -73,12 +76,56 @@ export function ProfilePage() {
             </p>
           </div>
 
+          {/* Sync Status */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Backend Sync Status</h2>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                onClick={() => syncUser()} 
+                disabled={loading}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Sync Now
+              </Button>
+            </div>
+            <div className="mt-2 p-3 bg-gray-50 rounded-md">
+              <div className="text-sm flex items-center">
+                <span className="font-medium">Status:</span>
+                <span className="ml-2">
+                  {syncState === 'synced' && (
+                    <span className="text-green-600">Synced with backend</span>
+                  )}
+                  {syncState === 'syncing' && (
+                    <span className="text-blue-600">Syncing...</span>
+                  )}
+                  {syncState === 'error' && (
+                    <span className="text-red-600">Sync error</span>
+                  )}
+                  {syncState === 'idle' && (
+                    <span className="text-gray-600">Waiting to sync</span>
+                  )}
+                </span>
+              </div>
+              {backendUser && (
+                <div className="mt-2 text-xs text-gray-600">
+                  <p>Backend data reflects: {backendUser.first_name} {backendUser.last_name} ({backendUser.email})</p>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Account Management */}
           <div>
             <h2 className="text-lg font-semibold mb-3">Account Management</h2>
             <div className="flex flex-wrap gap-2">
               <UserProfile />
             </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Changes made here will be synchronized with our backend services.
+            </p>
           </div>
         </div>
       </div>
