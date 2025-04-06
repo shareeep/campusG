@@ -1,14 +1,14 @@
-# Payment Service Testing Guide for Beginners
+# Payment Service Testing Guide
 
-This guide provides simple, step-by-step instructions for testing the Payment Service. You don't need to be an expert programmer to follow along!
+This guide provides simple, step-by-step instructions for testing the Payment Service with a focus on verifying database updates.
 
 ## What We're Testing
 
-We'll be testing two main connections:
-1. **Kafka Integration**: How our payment service communicates with other services
-2. **Stripe Integration**: How our payment service processes payments
+We'll be testing two main aspects:
+1. **Database Schema**: Checking that the database is using the updated payment status values
+2. **Payment Flow**: Verifying the payment flow from authorization to completion
 
-## Prerequisites (Things You Need Before Starting)
+## Prerequisites
 
 1. **Docker and Docker Compose**: These tools allow you to run the services on your computer
    - If not installed, download from [Docker's website](https://www.docker.com/products/docker-desktop)
@@ -23,185 +23,224 @@ We'll be testing two main connections:
      STRIPE_WEBHOOK_SECRET=whsec_your_key_here
      ```
 
-3. **Test Stripe Customer ID**: We use `cus_S2oxjQYZK8Z1Qy` in our examples
-   - You can create your own test customer in the Stripe Dashboard if needed
+3. **Test User Details**: We have two test users available:
+   
+   **Customer (for payment authorization):**
+   ```
+   Stripe Customer ID: cus_S4gg5SQhl4R6jC
+   ```
+   
+   **Runner (for payment release):**
+   ```
+   Runner ID: user_2ulBCA0zGBude9I8dgintjlGWyD
+   Connect Account ID: acct_1RAXKc4EjkIzXfSa
+   ```
 
-## Step 1: Start the Services
+## Start the Services
 
-First, we need to start all the required services. This is like turning on all the pieces of our application.
-
-```bash
-docker-compose up -d payment-db payment-service create-order-saga-db create-order-saga-orchestrator kafka zookeeper
-```
-
-**What this does**: Starts the database, payment service, messaging system (Kafka), and other required components.
-
-**Wait about 30 seconds** for everything to start up. You can check if the payment service is ready by looking at its logs:
-
-```bash
-docker-compose logs -f payment-service
-```
-
-Look for messages that say the service has started successfully. Press `Ctrl+C` to exit the logs when you're done.
-
-## Step 2: Test Basic Communication
-
-Now we'll test if our payment service can receive messages and process them correctly.
-
-### 2.1 Create a Test Message
-
-We'll create a file with a test payment request:
+First, start all the required services:
 
 ```bash
-# Copy and paste this ENTIRE command - it creates a file with our test payment message
-echo "{\"type\":\"authorize_payment\",\"correlation_id\":\"test-123\",\"timestamp\":\"2025-03-31T10:30:00Z\",\"payload\":{\"order_id\":\"test-order-987\",\"customer\":{\"clerkUserId\":\"clerk_test_user_id\",\"stripeCustomerId\":\"cus_S2oxjQYZK8Z1Qy\",\"userStripeCard\":{\"payment_method_id\":\"pm_card_visa\"}},\"order\":{\"amount\":1299,\"description\":\"Direct test payment\"},\"return_url\":\"http://localhost:3000/checkout/complete\"}}" > payment_test_message.json
+docker compose up -d payment-db payment-service kafka zookeeper
 ```
 
-**What this does**: Creates a file called `payment_test_message.json` that contains a sample payment request. Think of this as a fake order for $12.99.
+Wait about 30 seconds for everything to start up.
 
-> **TIP**: If you're on Windows and having issues with the command, you can also create this file manually in a text editor and save it as `payment_test_message.json`.
+## Basic Flow: Verify Database Schema and Payment Status Updates
 
-### 2.2 Send the Test Message
-
-Now we'll send this test message to our payment service through Kafka:
+### 1. Verify the Database Schema
 
 ```bash
-cat payment_test_message.json | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+# Connect to the payment database and check the enum type
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "\dT+"
 ```
 
-**What this does**: Takes our test message and sends it to the "payment_commands" channel where our payment service is listening.
+Verify that the `payment_status_enum` shows the updated values:
+- AUTHORIZED
+- SUCCEEDED
+- REVERTED
+- FAILED
 
-### 2.3 Check the Payment Service Response
+### 2. Test Payment Authorization
 
-Let's see how our payment service handled the message:
+```bash
+# Send a test authorization command (one line)
+echo "{\"type\":\"authorize_payment\",\"correlation_id\":\"test-auth-123\",\"payload\":{\"order_id\":\"test-order-123\",\"customer\":{\"clerkUserId\":\"user_2uFnauOsxFRGIoy3O5CJA6v5sM6\",\"stripeCustomerId\":\"cus_S4gg5SQhl4R6jC\",\"userStripeCard\":{\"payment_method_id\":\"pm_card_visa\"}},\"order\":{\"amount\":1599,\"description\":\"Test order\"},\"return_url\":\"http://localhost:3000/checkout/complete\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+```
+
+### 3. Check Database Status After Authorization
+
+```bash
+# Check the payment record status
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "SELECT payment_id, order_id, status FROM payments ORDER BY created_at DESC LIMIT 1;"
+```
+
+Verify the status is `AUTHORIZED` and save the payment_id for the next step.
+
+### 4. Test Payment Release
+
+```bash
+# Send a payment release command (replace PAYMENT_ID with your actual payment ID from step 3)
+echo "{\"type\":\"release_payment\",\"correlation_id\":\"test-release-123\",\"payload\":{\"payment_id\":\"PAYMENT_ID\",\"runner_id\":\"user_2ulBCA0zGBude9I8dgintjlGWyD\",\"runner_connect_account_id\":\"acct_1RAXKc4EjkIzXfSa\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+```
+
+### 5. Check Database Status After Release
+
+```bash
+# Check the final payment status
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "SELECT order_id, status FROM payments ORDER BY created_at DESC LIMIT 1;"
+```
+
+Verify the status is now `SUCCEEDED`.
+
+## Additional Testing Examples
+
+### Example 1: Testing Multiple Orders
+
+Test handling multiple orders with one-liner commands:
+
+```bash
+# Order 1: Standard meal order
+echo "{\"type\":\"authorize_payment\",\"correlation_id\":\"test-multi-1\",\"payload\":{\"order_id\":\"multi-order-1\",\"customer\":{\"clerkUserId\":\"user_2uFnauOsxFRGIoy3O5CJA6v5sM6\",\"stripeCustomerId\":\"cus_S4gg5SQhl4R6jC\",\"userStripeCard\":{\"payment_method_id\":\"pm_card_visa\"}},\"order\":{\"amount\":1299,\"description\":\"Chicken Rice Meal\"},\"return_url\":\"http://localhost:3000/checkout/complete\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+
+# Order 2: Larger order
+echo "{\"type\":\"authorize_payment\",\"correlation_id\":\"test-multi-2\",\"payload\":{\"order_id\":\"multi-order-2\",\"customer\":{\"clerkUserId\":\"user_2uFnauOsxFRGIoy3O5CJA6v5sM6\",\"stripeCustomerId\":\"cus_S4gg5SQhl4R6jC\",\"userStripeCard\":{\"payment_method_id\":\"pm_card_visa\"}},\"order\":{\"amount\":2599,\"description\":\"Family Meal Bundle\"},\"return_url\":\"http://localhost:3000/checkout/complete\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+
+# Order 3: Small order
+echo "{\"type\":\"authorize_payment\",\"correlation_id\":\"test-multi-3\",\"payload\":{\"order_id\":\"multi-order-3\",\"customer\":{\"clerkUserId\":\"user_2uFnauOsxFRGIoy3O5CJA6v5sM6\",\"stripeCustomerId\":\"cus_S4gg5SQhl4R6jC\",\"userStripeCard\":{\"payment_method_id\":\"pm_card_visa\"}},\"order\":{\"amount\":499,\"description\":\"Beverage Only\"},\"return_url\":\"http://localhost:3000/checkout/complete\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+```
+
+Check all payments are created in the database:
+```bash
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "SELECT order_id, amount, status FROM payments WHERE order_id LIKE 'multi-order-%';"
+```
+
+To release payments for these orders, get each payment ID and send release commands:
+
+```bash
+# Get payment IDs
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "SELECT payment_id, order_id FROM payments WHERE order_id LIKE 'multi-order-%';"
+
+# Then for each payment ID, send a release command (replace PAYMENT_ID accordingly)
+echo "{\"type\":\"release_payment\",\"correlation_id\":\"release-multi-1\",\"payload\":{\"payment_id\":\"PAYMENT_ID\",\"runner_id\":\"user_2ulBCA0zGBude9I8dgintjlGWyD\",\"runner_connect_account_id\":\"acct_1RAXKc4EjkIzXfSa\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+```
+
+
+
+echo "{\"type\":\"release_payment\",\"correlation_id\":\"release-multi-1\",\"payload\":{\"payment_id\":\"e0e8027a-504a-4a66-9ea0-1514a451b03e\",\"runner_id\":\"user_2ulBCA0zGBude9I8dgintjlGWyD\",\"runner_connect_account_id\":\"acct_1RAXKc4EjkIzXfSa\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+
+### Example 2: Testing a Failed Payment
+
+Test how the system handles payment failures by using an invalid payment method:
+
+```bash
+# Use a payment method that will be declined
+echo "{\"type\":\"authorize_payment\",\"correlation_id\":\"test-fail-1\",\"payload\":{\"order_id\":\"fail-order-1\",\"customer\":{\"clerkUserId\":\"user_2uFnauOsxFRGIoy3O5CJA6v5sM6\",\"stripeCustomerId\":\"cus_S4gg5SQhl4R6jC\",\"userStripeCard\":{\"payment_method_id\":\"pm_card_decline\"}},\"order\":{\"amount\":9999,\"description\":\"Order with declined payment\"},\"return_url\":\"http://localhost:3000/checkout/complete\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+```
+
+Check the database for failed payment status:
+```bash
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "SELECT order_id, status FROM payments WHERE order_id = 'fail-order-1';"
+```
+
+Verify the status is `FAILED`.
+
+### Example 3: Testing Payment Reversal
+
+Test the payment reversal flow (refund):
+
+```bash
+# 1. First authorize a payment
+echo "{\"type\":\"authorize_payment\",\"correlation_id\":\"test-revert-1\",\"payload\":{\"order_id\":\"revert-order-1\",\"customer\":{\"clerkUserId\":\"user_2uFnauOsxFRGIoy3O5CJA6v5sM6\",\"stripeCustomerId\":\"cus_S4gg5SQhl4R6jC\",\"userStripeCard\":{\"payment_method_id\":\"pm_card_visa\"}},\"order\":{\"amount\":1999,\"description\":\"Order to be reverted\"},\"return_url\":\"http://localhost:3000/checkout/complete\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+
+# 2. Get the payment ID
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "SELECT payment_id FROM payments WHERE order_id = 'revert-order-1';"
+
+389f00ec-5d21-40b3-903a-74d7db08ae2a
+
+echo "{\"type\":\"revert_payment\",\"correlation_id\":\"test-revert-1\",\"payload\":{\"payment_id\":\"389f00ec-5d21-40b3-903a-74d7db08ae2a\",\"reason\":\"Customer canceled order\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+
+# 3. Send a revert payment command (replace PAYMENT_ID with the actual ID)
+echo "{\"type\":\"revert_payment\",\"correlation_id\":\"test-revert-1\",\"payload\":{\"payment_id\":\"PAYMENT_ID\",\"reason\":\"Customer canceled order\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
+
+# 4. Check the database for reverted payment status
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "SELECT order_id, status FROM payments WHERE order_id = 'revert-order-1';"
+```
+
+Verify the status is `REVERTED`.
+
+## Troubleshooting Guide
+
+### Common Database Issues
+
+#### Issue: Old Enum Values Still Present
+
+If you see the old values (INITIATING, RELEASED) in the database enum type:
+
+```bash
+# Connect to the database and check the enum type
+docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "\dT+"
+```
+
+Solution: Reset the database and recreate it with the new schema:
+
+```bash
+# Stop the payment service
+docker compose stop payment-service
+
+# Remove the payment database volume
+docker volume rm campusg_payment-db-data
+
+# Restart the services
+docker compose up -d payment-db payment-service
+```
+
+#### Issue: Database Connection Errors
+
+If the payment service can't connect to the database:
+
+```bash
+# Check if the database is running
+docker compose ps payment-db
+
+# If needed, restart the database
+docker compose restart payment-db
+
+# Wait 10-15 seconds, then restart the payment service
+docker compose restart payment-service
+```
+
+### JSON Message Issues
+
+If your JSON messages cause errors, make sure:
+
+1. All quotes are properly escaped with backslashes in the echo command
+2. The JSON is valid and properly formatted
+3. Try sending the message as a single line without line breaks
+
+## Checking Logs
+
+To understand what's happening in the payment service:
 
 ```bash
 docker logs campusg-payment-service-1 --tail 50
 ```
 
-**What to look for**: You should see messages that show:
-- The service received our command
-- It created or updated a payment record
-- It contacted Stripe to create a payment
-- It published a success message back
+Look for:
+- Payment status changes (AUTHORIZED → SUCCEEDED)
+- Stripe API interactions
+- Any error messages
 
-Look for lines similar to:
-```
-Received command authorize_payment from payment_commands with correlation_id test-123
-Handling authorize_payment command for correlation_id: test-123
-Payment record [some-id] created/updated for order test-order-987 status: INITIATING
-Attempting to create Stripe PaymentIntent...
-Stripe PaymentIntent [some-id] created for order test-order-987 status: requires_capture
-Publishing event payment.authorized to payment_events with correlation_id test-123
-```
-
-If you see these messages, your payment service is working correctly! 🎉
-
-## Step 3: Check for Response Messages
-
-Let's verify that our payment service actually sent back a response message:
-
-```bash
-docker exec -it campusg-kafka-1 kafka-console-consumer --bootstrap-server kafka:9092 --topic payment_events --from-beginning
-```
-
-**What this does**: Shows all messages on the "payment_events" channel, which is where our payment service reports the results of payment operations.
-
-**What to look for**: You should see a JSON message that looks something like:
-```json
-{"type":"payment.authorized","correlation_id":"test-123","timestamp":"2025-03-31T14:32:06.047Z","payload":{"payment_id":"bcaab9da-c3f0-45ec-be90-9707d773780b","order_id":"test-order-987","payment_intent_id":"pi_3R8jNhC6VpJLnLai0XYnOQSf","status":"AUTHORIZED"},"source":"payment-service"}
-```
-
-This message tells other services that the payment was successfully authorized.
-
-Press `Ctrl+C` to exit when you're done looking at the messages.
-
-## Step 4: Verify in Stripe Dashboard
-
-Now let's check if the payment actually appeared in Stripe:
-
-1. Open your web browser and go to [Stripe Dashboard](https://dashboard.stripe.com/test/payments)
-2. Log in if needed
-3. Look for a new payment with:
-   - Amount: $12.99
-   - Status: "Requires capture"
-   - Description: "Direct test payment"
-
-If you see this payment, it means our payment service successfully communicated with Stripe! 🎉
-
-## Step 5: Test the Complete Flow (Optional)
-
-If you want to test how the payment service works with the entire order process, you can run the full integration test:
-
-```bash
-# First, copy the test scripts into the container
-docker cp services/create-order-saga-orchestrator/fixed_kafka_test_producer.py campusg-create-order-saga-orchestrator-1:/app/
-docker cp services/create-order-saga-orchestrator/test_payment_integration.py campusg-create-order-saga-orchestrator-1:/app/
-
-# Then run the integration test
-docker exec -it campusg-create-order-saga-orchestrator-1 python /app/test_payment_integration.py
-```
-
-This will simulate a complete order flow including the payment process.
-
-## Troubleshooting Guide
-
-If something didn't work as expected, here are some common issues and how to fix them:
-
-### Error: "Payment service didn't respond"
-
-**Possible causes and solutions:**
-- **Services not fully started**: Wait a bit longer and try again
-- **Kafka not running**: Restart the Kafka service with `docker-compose restart kafka`
-- **Payment service crashed**: Check the logs with `docker logs campusg-payment-service-1` for error messages
-
-### Error: "Invalid JSON format"
-
-**Possible causes and solutions:**
-- **Message file has errors**: Double-check the payment_test_message.json file
-- **Special characters issue**: Try creating the file manually in a text editor instead of using echo
-- **Try the fixed version**: We've included a pre-made file you can use: `payment_test_message_fixed.json`
-
-### Error: "Stripe API key invalid"
-
-**Possible causes and solutions:**
-- **Missing or wrong API key**: Check your `.env` file for the correct Stripe test API keys
-- **Using production keys**: Make sure you're using test mode keys (they start with `sk_test_`)
-- **Restart after key change**: Run `docker-compose restart payment-service` after fixing the keys
-
-### Error: "Database table not found"
-
-**Possible causes and solutions:**
-- **Database needs reset**: Run this command to reset the database:
-  ```bash
-  docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "DROP TABLE IF EXISTS payments CASCADE;"
-  docker restart campusg-payment-service-1
-  ```
-
-### Error: "Stripe customer ID not found"
-
-**Possible causes and solutions:**
-- **Using invalid customer ID**: Try using our test ID: `cus_S2oxjQYZK8Z1Qy`
-- **Create your own customer**: In the Stripe Dashboard, create a test customer and use that ID
-- **Edit the test message**: Update the `stripeCustomerId` field in the test message
-
-## Useful Commands for Debugging
-
-Here are some helpful commands for checking what's happening:
+## Useful Commands
 
 - **Check Payment Service Logs**:
   ```bash
   docker logs campusg-payment-service-1
   ```
 
-- **See All Running Services**:
-  ```bash
-  docker-compose ps
-  ```
-
 - **Restart a Service**:
   ```bash
-  docker-compose restart payment-service
+  docker compose restart payment-service
   ```
 
 - **Check Kafka Topics**:
@@ -209,13 +248,10 @@ Here are some helpful commands for checking what's happening:
   docker exec campusg-kafka-1 kafka-topics --list --bootstrap-server kafka:9092
   ```
 
-## Glossary of Terms
+- **Reset the Database**:
+  ```bash
+  docker compose down -v payment-db
+  docker compose up -d payment-db payment-service
+  ```
 
-- **Kafka**: A messaging system that lets different services communicate
-- **Payment Intent**: Stripe's way of tracking a payment from start to finish
-- **Webhook**: A way for Stripe to notify our service about payment events
-- **Saga**: A pattern for managing transactions across multiple services
-- **Container**: An isolated environment where a service runs
-- **JSON**: A format for structuring data that's easy for computers to process
-
-Congratulations! You've successfully tested the payment service. If you have any questions or encounter issues not covered in this guide, please reach out to the development team.
+Congratulations! You've successfully tested the payment service and verified the database updates properly. If you have any questions, please reach out to the development team.

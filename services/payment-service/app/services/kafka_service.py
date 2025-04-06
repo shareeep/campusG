@@ -248,6 +248,14 @@ def publish_payment_failed_event(kafka_service, correlation_id, error_payload):
         correlation_id
     )
 
+def publish_payment_released_event(kafka_service, correlation_id, payload):
+    """Publish a payment.released event."""
+    return kafka_service.publish_event(
+        'payment.released',
+        payload,
+        correlation_id
+    )
+
 # --- Initialization ---
 
 # Global instance (using singleton pattern via __new__)
