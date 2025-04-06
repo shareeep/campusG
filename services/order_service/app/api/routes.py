@@ -7,6 +7,9 @@ import json
 from datetime import datetime
 from decimal import Decimal
 
+# Import calculation functions from the new utility module
+from app.utils.calculations import calculate_food_total, calculate_delivery_fee
+
 api = Blueprint('api', __name__)
 
 @api.route('/health', methods=['GET'])
@@ -438,18 +441,5 @@ def complete_order():
         current_app.logger.error(f"Error completing order: {str(e)}", exc_info=True)
         return jsonify({'error': f"Failed to complete order: {str(e)}"}), 500
 
-
-# Helper functions for calculating amounts
-def calculate_food_total(food_items):
-    """Calculate the food total"""
-    total = Decimal('0.00')
-    for item in food_items:
-        price = Decimal(str(item.get('price', 0)))
-        quantity = Decimal(str(item.get('quantity', 0)))
-        total += price * quantity
-    return total
-
-def calculate_delivery_fee(location):
-    """Calculate delivery fee based on location"""
-    # In a real implementation, this would use distance or zones
-    return Decimal('3.99')
+# Removed helper functions calculate_food_total and calculate_delivery_fee
+# as they are now imported from app.utils.calculations

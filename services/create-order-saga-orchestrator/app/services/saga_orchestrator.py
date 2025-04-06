@@ -204,16 +204,34 @@ class CreateOrderSagaOrchestrator:
 
             # Next step: Authorize payment
             kafka_svc = current_app.kafka_service
+            # Extract payment info received from user service event
             user_payment_info = payload.get('payment_info', {})
+            stripe_customer_id = user_payment_info.get('stripeCustomerId')
+            payment_method_id = user_payment_info.get('paymentMethodId')
+
+            # Construct the payload expected by the Payment Service
+            # Ensure amount is in cents (integer)
+            amount_cents = int(saga_state.payment_amount * 100)
+            
+            payment_payload = {
+                'order_id': saga_state.order_id,
+                'customer': {
+                    'clerkUserId': saga_state.customer_id, # Use the customer_id stored in saga state
+                    'stripeCustomerId': stripe_customer_id,
+                    'userStripeCard': { # Nest payment method ID
+                        'payment_method_id': payment_method_id
+                    }
+                },
+                'order': {
+                    'amount': amount_cents,
+                    'description': f"Payment for order {saga_state.order_id}" # Optional description
+                }
+                # Add 'return_url' if needed for 3DS flows later
+            }
 
             success, _ = publish_authorize_payment_command(
                 kafka_svc,
-                {
-                    'order_id': saga_state.order_id,
-                    'customer_id': saga_state.customer_id,
-                    'amount': saga_state.payment_amount,
-                    'payment_info': user_payment_info
-                },
+                payment_payload, # Send the correctly structured payload
                 correlation_id
             )
 

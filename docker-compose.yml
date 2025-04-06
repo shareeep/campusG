@@ -250,8 +250,9 @@ services:
         condition: service_healthy
     ports:
       - "3003:3000"
-    volumes: # Re-enabled volume mount
-      - ./services/payment-service:/app  # For development - mount code changes
+    # Removed volume mount to ensure the container uses the entrypoint.sh from the image build
+    # volumes: 
+    #   - ./services/payment-service:/app  
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"] # Changed path to /health
       interval: 10s

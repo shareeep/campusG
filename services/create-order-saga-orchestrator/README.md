@@ -60,7 +60,7 @@ KAFKA_BOOTSTRAP_SERVERS=kafka:9092
 USER_SERVICE_URL=http://user-service:3001
 ORDER_SERVICE_URL=http://order-service:3002
 PAYMENT_SERVICE_URL=http://payment-service:3003
-SCHEDULER_SERVICE_URL=http://timer-service:3005
+TIMER_SERVICE_URL=http://timer-service:3005
 ```
 
 ## Libraries and Dependencies

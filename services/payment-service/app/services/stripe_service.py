@@ -125,11 +125,14 @@ def handle_authorize_payment_command(correlation_id, payload):
                 'customer_id': customer_id, # Internal customer ID (clerk)
                 'correlation_id': correlation_id,
                 'payment_record_id': payment.payment_id
-            }
+            },
+            # Explicitly disable redirect-based payment methods for this call
+            'automatic_payment_methods': {'enabled': True, 'allow_redirects': 'never'}
         }
         # Add return_url only if provided, needed for 3DS redirects
-        if return_url:
-            payment_intent_params['return_url'] = return_url
+        # Note: return_url is not needed if allow_redirects is 'never'
+        # if return_url:
+        #     payment_intent_params['return_url'] = return_url
             # 'off_session': False, # Default is false, means customer is present
             # 'use_stripe_sdk': True, # Needed if frontend uses stripe.handleCardAction
 
