@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 # Kafka Configuration
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
-ORDER_COMMANDS_TOPIC = 'order_commands'    # Topic to consume commands from
-ORDER_EVENTS_TOPIC = 'order_events'        # Topic to publish events to
+ORDER_COMMANDS_TOPIC = 'order-commands'    # Topic to consume commands from
+ORDER_EVENTS_TOPIC = 'order-events'        # Topic to publish events to
 CONSUMER_GROUP_ID = 'order-service-group'  # Unique consumer group ID
 
 class KafkaService:

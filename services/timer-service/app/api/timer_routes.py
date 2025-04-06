@@ -66,7 +66,7 @@ def start_request_timer():
         db.session.commit()
         
         # Publish timer started event to Kafka
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer-events')
+        kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer_events')
         kafka_client.publish(kafka_topic, {
             'type': 'TIMER_STARTED',
             'payload': {
@@ -132,7 +132,7 @@ def stop_request_timer():
         db.session.commit()
         
         # Publish timer stopped event to Kafka
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer-events')
+        kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer_events')
         kafka_client.publish(kafka_topic, {
             'type': 'TIMER_STOPPED',
             'payload': {
@@ -188,7 +188,7 @@ def cancel_timer():
         db.session.commit()
         
         # Publish timer cancelled event to Kafka
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer-events')
+        kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer_events')
         kafka_client.publish(kafka_topic, {
             'type': 'TIMER_CANCELLED',
             'payload': {
@@ -240,7 +240,7 @@ def check_order_timeout():
             })
             
             # Publish timer timeout event to Kafka
-            kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer-events')
+            kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer_events')
             kafka_client.publish(kafka_topic, {
                 'type': 'ORDER_TIMEOUT',
                 'payload': {
@@ -361,7 +361,7 @@ def test_quick_timer():
         db.session.commit()
         
         # Publish timer started event to Kafka
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer-events')
+        kafka_topic = current_app.config.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer_events')
         kafka_client.publish(kafka_topic, {
             'type': 'TIMER_STARTED',
             'payload': {

@@ -1,6 +1,4 @@
 #!/bin/sh
-set -e
-
 # Wait for the database to be ready
 sleep 5
 

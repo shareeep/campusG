@@ -35,6 +35,10 @@ def create_app(config=None):
     # Register blueprint at root
     app.register_blueprint(notification_api) 
     
+    # Register CLI commands
+    from app import cli
+    cli.init_app(app)
+    
     # Removed redundant /health route (it's defined in api/notification_routes.py now)
     
     # Setup database

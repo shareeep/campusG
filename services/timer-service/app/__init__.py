@@ -20,7 +20,7 @@ def create_app(config=None):
         SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/timer_db'),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         KAFKA_BOOTSTRAP_SERVERS=os.environ.get('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092'),
-        KAFKA_TOPIC_TIMER_EVENTS=os.environ.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer-events'),
+        KAFKA_TOPIC_TIMER_EVENTS=os.environ.get('KAFKA_TOPIC_TIMER_EVENTS', 'timer_events'),
     )
     
     # Load custom config if provided

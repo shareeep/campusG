@@ -24,13 +24,14 @@ logger = logging.getLogger(__name__)
 class KafkaClient:
     """Kafka client for publishing commands and consuming events"""
     
-    def __init__(self, bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS):
+    def __init__(self, bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS, app=None):
         """Initialize the Kafka client"""
         self.bootstrap_servers = bootstrap_servers
         self.producer = None
         self.consumer = None
         self.running = False
         self.consumer_thread = None
+        self.app = app  # Store Flask app reference
         
         # Event handlers by message type
         self.event_handlers = {}
@@ -156,7 +157,22 @@ class KafkaClient:
             handler = self.event_handlers.get(event_type)
             if handler:
                 logger.debug(f"Executing handler for {event_type}")
-                threading.Thread(target=handler, args=(correlation_id, payload)).start()
+                
+                # Pass the app context to the handler thread
+                if self.app:
+                    def run_with_app_context(handler_func, corr_id, payload_data):
+                        with self.app.app_context():
+                            try:
+                                handler_func(corr_id, payload_data)
+                            except Exception as e:
+                                logger.error(f"Error in handler: {str(e)}", exc_info=True)
+                                
+                    threading.Thread(target=run_with_app_context, 
+                                    args=(handler, correlation_id, payload)).start()
+                else:
+                    # Fallback to direct execution without app context
+                    logger.warning("No Flask app context available for handler")
+                    threading.Thread(target=handler, args=(correlation_id, payload)).start()
             else:
                 logger.warning(f"No handler registered for event type: {event_type}")
                 
@@ -233,13 +249,21 @@ def publish_start_timer_command(kafka_service, timer_data, correlation_id=None):
         correlation_id
     )
 
-def init_kafka():
+def init_kafka(app=None):
     """Initialize the Kafka client
+    
+    Args:
+        app: Flask application instance for context management
     
     Returns:
         KafkaClient: The Kafka client instance
     """
     global kafka_client
+    
+    # Set the app reference if provided
+    if app and not kafka_client.app:
+        kafka_client.app = app
+        logger.info("Set Flask app reference in Kafka client")
     
     # Ensure topics exist
     event_topics = [ORDER_EVENTS_TOPIC, PAYMENT_EVENTS_TOPIC, TIMER_EVENTS_TOPIC, USER_EVENTS_TOPIC]

@@ -41,7 +41,7 @@ def create_app():
     
     # Kafka is now a global instance, but we still initialize it
     app.logger.info("Initializing Kafka service...")
-    init_kafka()  # This initializes the global kafka_client
+    init_kafka(app)  # This initializes the global kafka_client and passes the Flask app context
     
     # Set the kafka_service property to the global instance for compatibility
     app.kafka_service = kafka_client
