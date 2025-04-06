@@ -95,20 +95,17 @@ def create_order():
         db.session.add(order)
         db.session.commit()
 
-        # Get the Kafka topic for order events from the configuration (defaults to 'order-events')
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_ORDER_EVENTS', 'order-events')
-
-        kafka_client.publish(kafka_topic, {
-            'type': 'ORDER_CREATED',
-            'payload': {
+        # Publish event using the correct method
+        kafka_client.publish_event(
+            'ORDER_CREATED',  # Keep the original event type format
+            {
                 'customerId': customer_id,
-                'runnerId': None,  # No runner assigned at creation time (or adjust accordingly)
+                'runnerId': None,  # No runner assigned at creation time
                 'orderId': order.order_id,
                 'status': "created",
-                # 'timestamp': datetime.utcnow().isoformat(),  # Explicit timestamp in the payload
-                'event': json.dumps(order.to_dict())  # Full snapshot of the order data
+                'event': json.dumps(order.to_dict())  # Keep the same payload structure
             }
-        })
+        )
         
         return jsonify({
             'success': True,
@@ -167,20 +164,17 @@ def update_order_status_action():
         db.session.commit()
 
 
-        # Set Kafka topic from configuration (default to 'order-events')
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_ORDER_EVENTS', 'order-events')
-        
-        # Publish a Kafka event using the required format.
-        kafka_client.publish(kafka_topic, {
-            'type': 'ORDER_UPDATED',
-            'payload': {
-                'customerId': order.cust_id,         # Assumes order has a cust_id field
-                'runnerId': order.runner_id,           # Runner may be None if not assigned
+        # Publish event using the correct method
+        kafka_client.publish_event(
+            'ORDER_UPDATED',  # Keep the original event type format
+            {
+                'customerId': order.cust_id,
+                'runnerId': order.runner_id,
                 'orderId': order.order_id,
-                'status': 'updated',             # e.g., "ACCEPTED", "COMPLETED", etc.
-                'event': json.dumps(order.to_dict())   # A JSON string representing the order snapshot
+                'status': 'updated',
+                'event': json.dumps(order.to_dict())
             }
-        })
+        )
 
         return jsonify({
             'message': 'Order status updated successfully',
@@ -238,20 +232,17 @@ def accept_order():
         order.order_status = OrderStatus.ACCEPTED
         db.session.commit()
 
-        # Set Kafka topic from configuration (default to 'order-events')
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_ORDER_EVENTS', 'order-events')
-        
-        # Publish a Kafka event using the required format.
-        kafka_client.publish(kafka_topic, {
-            'type': 'ORDER_ACCEPTED',
-            'payload': {
-                'customerId': order.cust_id,         # Assumes order has a cust_id field
-                'runnerId': order.runner_id,           # Runner may be None if not assigned
+        # Publish event using the correct method
+        kafka_client.publish_event(
+            'ORDER_ACCEPTED',  # Keep the original event type format
+            {
+                'customerId': order.cust_id,
+                'runnerId': order.runner_id,
                 'orderId': order.order_id,
-                'status': 'accepted',             # e.g., "ACCEPTED", "COMPLETED", etc.
-                'event': json.dumps(order.to_dict())   # A JSON string representing the order snapshot
+                'status': 'accepted',
+                'event': json.dumps(order.to_dict())
             }
-        })
+        )
 
         return jsonify({
             'success': True,
@@ -301,20 +292,17 @@ def cancel_order():
         order.order_status = OrderStatus.CANCELLED
         db.session.commit()
 
-        # Set Kafka topic from configuration (default to 'order-events')
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_ORDER_EVENTS', 'order-events')
-        
-        # Publish a Kafka event using the required format.
-        kafka_client.publish(kafka_topic, {
-            'type': 'ORDER_CANCELLED',
-            'payload': {
-                'customerId': order.cust_id,         # Assumes order has a cust_id field
-                'runnerId': order.runner_id,           # Runner may be None if not assigned
+        # Publish event using the correct method
+        kafka_client.publish_event(
+            'ORDER_CANCELLED',  # Keep the original event type format
+            {
+                'customerId': order.cust_id,
+                'runnerId': order.runner_id,
                 'orderId': order.order_id,
-                'status': 'cancelled',             # e.g., "ACCEPTED", "COMPLETED", etc.
-                'event': json.dumps(order.to_dict())   # A JSON string representing the order snapshot
+                'status': 'cancelled',
+                'event': json.dumps(order.to_dict())
             }
-        })
+        )
 
         return jsonify({
             'message': 'Order cancelled successfully',
@@ -370,20 +358,17 @@ def cancel_acceptance():
 
         db.session.commit()
 
-        # Set Kafka topic from configuration (default to 'order-events')
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_ORDER_EVENTS', 'order-events')
-        
-        # Publish a Kafka event using the required format.
-        kafka_client.publish(kafka_topic, {
-            'type': 'ORDER_ACCEPTANCE_CANCELLED',
-            'payload': {
-                'customerId': order.cust_id,         # Assumes order has a cust_id field
-                'runnerId': order.runner_id,           # Runner may be None if not assigned
+        # Publish event using the correct method
+        kafka_client.publish_event(
+            'ORDER_ACCEPTANCE_CANCELLED',  # Keep the original event type format
+            {
+                'customerId': order.cust_id,
+                'runnerId': runner_id,  # Use the stored runner_id before clearing
                 'orderId': order.order_id,
-                'status': 'acceptanceCancelled',             # e.g., "ACCEPTED", "COMPLETED", etc.
-                'event': json.dumps(order.to_dict())   # A JSON string representing the order snapshot
+                'status': 'acceptanceCancelled',
+                'event': json.dumps(order.to_dict())
             }
-        })
+        )
 
         return jsonify({
             'message': 'Order acceptance cancelled successfully',
@@ -426,20 +411,17 @@ def complete_order():
         order.completed_at = db.func.now()
         db.session.commit()
 
-        # Set Kafka topic from configuration (default to 'order-events')
-        kafka_topic = current_app.config.get('KAFKA_TOPIC_ORDER_EVENTS', 'order-events')
-        
-        # Publish a Kafka event using the required format.
-        kafka_client.publish(kafka_topic, {
-            'type': 'ORDER_COMPLETED',
-            'payload': {
-                'customerId': order.cust_id,         # Assumes order has a cust_id field
-                'runnerId': order.runner_id,           # Runner may be None if not assigned
+        # Publish event using the correct method
+        kafka_client.publish_event(
+            'ORDER_COMPLETED',  # Keep the original event type format
+            {
+                'customerId': order.cust_id,
+                'runnerId': order.runner_id,
                 'orderId': order.order_id,
-                'status': 'completed',             # e.g., "ACCEPTED", "COMPLETED", etc.
-                'event': json.dumps(order.to_dict())   # A JSON string representing the order snapshot
+                'status': 'completed',
+                'event': json.dumps(order.to_dict())
             }
-        })
+        )
 
         # Prepare response JSON with "completedAt" field
         order_dict = order.to_dict()
