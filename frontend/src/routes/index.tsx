@@ -1,4 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { SignInPage } from '@/pages/auth/sign-in';
+import { SignUpPage } from '@/pages/auth/sign-up';
 import { RootLayout } from '@/components/layout/root-layout';
 import { RoleGuard } from '@/components/role/role-guard';
 import { RoleSelector } from '@/components/role/role-selector';
@@ -11,20 +13,36 @@ import { OrderTrackingPage } from '@/pages/customer/order-tracking';
 import { OrderHistoryPage } from '@/pages/customer/order-history';
 import { AvailableOrdersPage } from '@/pages/runner/available-orders';
 import { ActiveOrdersPage } from '@/pages/runner/active-orders';
-import { useUser } from '@/lib/hooks/use-user';
+import { useAuth } from '@clerk/clerk-react';
 
-function RequireUser({ children }: { children: React.ReactNode }) {
-  const { id } = useUser();
-  if (!id) return <Navigate to="/user-select" replace />;
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { isSignedIn, isLoaded } = useAuth();
+  
+  if (!isLoaded) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+  
+  if (!isSignedIn) {
+    return <Navigate to="/sign-in" replace />;
+  }
+  
   return <>{children}</>;
 }
 
 export function AppRoutes() {
   return (
     <Routes>
+      {/* Public auth routes */}
+      <Route path="/sign-in" element={<SignInPage />} />
+      <Route path="/sign-up" element={<SignUpPage />} />
       <Route path="/user-select" element={<UserSelectPage />} />
       
-      <Route element={<RequireUser><RootLayout /></RequireUser>}>
+      {/* Protected routes */}
+      <Route element={<RequireAuth><RootLayout /></RequireAuth>}>
         <Route path="/" element={<HomePage />} />
         <Route path="/role-select" element={<RoleSelector />} />
         <Route path="/profile" element={<ProfilePage />} />

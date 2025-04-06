@@ -753,3 +753,101 @@ def add_payment_method(clerk_user_id):
         db.session.rollback()
         current_app.logger.error(f"Error adding payment method: {str(e)}")
         return jsonify({"success": False, "description": f"Server error: {str(e)}"}), 500
+
+@api.route('/user/sync-from-frontend', methods=['POST'])
+def sync_user_from_frontend():
+    """
+    Sync a user from frontend Clerk data
+    
+    This endpoint allows the frontend to sync a user without relying on webhooks
+    """
+    try:
+        data = request.json
+        
+        if not data or 'clerk_user_id' not in data:
+            return jsonify({'success': False, 'message': 'Missing clerk_user_id'}), 400
+            
+        clerk_user_id = data['clerk_user_id']
+        
+        # Check if user already exists
+        user = User.query.get(clerk_user_id)
+        
+        if user:
+            # Update existing user
+            if 'email' in data:
+                user.email = data['email']
+            if 'first_name' in data:
+                user.first_name = data['first_name']
+            if 'last_name' in data:
+                user.last_name = data['last_name']
+            if 'phone_number' in data:
+                user.phone_number = data['phone_number']
+            if 'username' in data:
+                user.username = data['username']
+                
+            user.updated_at = datetime.now(timezone.utc)
+        else:
+            # Create new user
+            user = User(
+                clerk_user_id=clerk_user_id,
+                email=data.get('email', ''),
+                first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', ''),
+                phone_number=data.get('phone_number'),
+                username=data.get('username'),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            db.session.add(user)
+            
+            # Create Stripe customer and account if needed
+            try:
+                # Get Stripe API key
+                stripe_api_key = current_app.config.get('STRIPE_SECRET_KEY') or os.environ.get('STRIPE_SECRET_KEY')
+                if stripe_api_key:
+                    stripe.api_key = stripe_api_key
+                    
+                    # 1. Create Stripe customer
+                    customer = stripe.Customer.create(
+                        email=user.email,
+                        name=f"{user.first_name} {user.last_name}".strip(),
+                        metadata={'clerk_user_id': user.clerk_user_id}
+                    )
+                    user.stripe_customer_id = customer.id
+                    current_app.logger.info(f"Created Stripe customer {customer.id} for user {user.clerk_user_id}")
+                    
+                    # 2. Create Stripe Connect Express account
+                    try:
+                        connect_account = stripe.Account.create(
+                            type="express",
+                            country="SG",
+                            email=user.email,
+                            capabilities={
+                                "card_payments": {"requested": True},
+                                "transfers": {"requested": True},
+                            },
+                            metadata={
+                                'clerk_user_id': user.clerk_user_id,
+                                'email': user.email,
+                                'name': f"{user.first_name} {user.last_name}".strip()
+                            }
+                        )
+                        user.stripe_connect_account_id = connect_account.id
+                        current_app.logger.info(f"Created Stripe Connect account {connect_account.id} for user {user.clerk_user_id}")
+                    except Exception as connect_error:
+                        current_app.logger.error(f"Failed to create Stripe Connect account for user {user.clerk_user_id}: {str(connect_error)}")
+            except Exception as stripe_error:
+                current_app.logger.error(f"Stripe error during frontend sync: {str(stripe_error)}")
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'User synced successfully',
+            'user': user.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error syncing user from frontend: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to sync user: {str(e)}"}), 500
