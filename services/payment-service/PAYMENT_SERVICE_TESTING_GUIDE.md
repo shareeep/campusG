@@ -124,8 +124,8 @@ docker exec -it campusg-payment-db-1 psql -U postgres -d payment_db -c "SELECT p
 # Then for each payment ID, send a release command (replace PAYMENT_ID accordingly)
 echo "{\"type\":\"release_payment\",\"correlation_id\":\"release-multi-1\",\"payload\":{\"payment_id\":\"PAYMENT_ID\",\"runner_id\":\"user_2ulBCA0zGBude9I8dgintjlGWyD\",\"runner_connect_account_id\":\"acct_1RAXKc4EjkIzXfSa\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
 ```
-
-
+50d76939-5287-471b-b81c-3a1988bca101
+echo "{\"type\":\"release_payment\",\"correlation_id\":\"release-multi-1\",\"payload\":{\"payment_id\":\"50d76939-5287-471b-b81c-3a1988bca101\",\"runner_id\":\"user_2ulBCA0zGBude9I8dgintjlGWyD\",\"runner_connect_account_id\":\"acct_1RAXKc4EjkIzXfSa\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
 
 echo "{\"type\":\"release_payment\",\"correlation_id\":\"release-multi-1\",\"payload\":{\"payment_id\":\"e0e8027a-504a-4a66-9ea0-1514a451b03e\",\"runner_id\":\"user_2ulBCA0zGBude9I8dgintjlGWyD\",\"runner_connect_account_id\":\"acct_1RAXKc4EjkIzXfSa\"}}" | docker exec -i campusg-kafka-1 kafka-console-producer --bootstrap-server kafka:9092 --topic payment_commands
 

@@ -134,6 +134,62 @@ docker-compose restart notification-service
 docker-compose exec kafka kafka-topics --bootstrap-server localhost:9092 --list
 ```
 
+5. Debug Kafka message format issues:
+```bash
+# View messages in a topic to check format
+docker-compose exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic payment_commands --from-beginning --max-messages 5
+```
+
+### Common Errors
+
+#### 1. JSON Deserialization Errors
+
+If you see errors like `'str' object has no attribute 'get'` or similar JSON parsing issues:
+
+```
+ERROR - Error processing message: 'str' object has no attribute 'get'
+AttributeError: 'str' object has no attribute 'get'
+```
+
+This indicates a mismatch between message format and deserializer configuration. To fix:
+
+1. Check the producer service's serialization:
+```bash
+docker-compose exec create-order-saga-orchestrator cat app/services/kafka_service.py | grep -A 5 "value_serializer"
+```
+
+2. Check the consumer service's deserialization:
+```bash
+docker-compose exec payment-service cat app/services/kafka_service.py | grep -A 5 "value_deserializer"
+```
+
+3. Ensure both are using compatible serialization/deserialization:
+   - Both should be using JSON serialization for dictionaries
+   - Consumer needs to parse string messages with `json.loads()` 
+   - Add this fix to the consumer service:
+
+```python
+# Example fix in _process_message method
+try:
+    if isinstance(command_data, str):
+        command_data = json.loads(command_data)
+    command_type = command_data.get('type')
+    # ...rest of processing
+except json.JSONDecodeError:
+    logger.error(f"Failed to decode JSON message: {command_data}")
+```
+
+#### 2. Topic Naming Convention Issues
+
+If services aren't receiving messages, check topic naming consistency:
+
+```bash
+# List all topics to verify naming conventions match
+docker-compose exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+```
+
+Ensure all services use a consistent format (underscores vs. hyphens) in both producers and consumers.
+
 ## Understanding the Flow
 
 Here's what happens when an order is created:

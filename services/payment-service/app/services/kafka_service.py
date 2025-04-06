@@ -150,6 +150,17 @@ class KafkaService:
         """Process a received Kafka command message."""
         try:
             command_data = message.value
+            
+            # Fix for string messages - add this block
+            if isinstance(command_data, str):
+                try:
+                    command_data = json.loads(command_data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to decode JSON message from {message.topic}: {command_data[:100]}...")
+                    logger.error(f"JSON decode error: {str(e)}")
+                    return
+            
+            # Now command_data should be a dictionary
             command_type = command_data.get('type')
             correlation_id = command_data.get('correlation_id')
             payload = command_data.get('payload', {})
