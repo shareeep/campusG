@@ -17,4 +17,5 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 3000
 
-CMD ["flask", "run", "--host=0.0.0.0", "--port=3000"]
+# Run the application with migrations using python directly instead of flask command
+CMD ["python", "run.py"]

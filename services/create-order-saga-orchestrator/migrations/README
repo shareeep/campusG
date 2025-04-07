@@ -1,0 +1,29 @@
+# Database Migrations
+
+Generic single-database configuration with Alembic.
+
+## Overview
+
+This directory contains the database migrations for the Create Order Saga Orchestrator service.
+These migrations will be automatically applied when the service starts up.
+
+## Migration Structure
+
+- `alembic.ini`: Alembic configuration file
+- `env.py`: Environment setup for migrations
+- `script.py.mako`: Template for migration scripts
+- `versions/`: Contains individual migration script files
+  - `001_initial_schema.py`: Initial database schema with ENUM types and tables
+
+## Manual Execution
+
+To run migrations manually (if needed):
+
+```bash
+flask db upgrade
+```
+
+To create a new migration after model changes:
+
+```bash
+flask db migrate -m "Description of changes"
