@@ -17,7 +17,7 @@ async def main():
             rollback_update_order_status, rollback_release_funds],
             activity_executor=activity_executor
         )
-        print("Starting Worker...")
+        print("Starting Worker......")
         await worker.run()
 
 
