@@ -1,6 +1,0 @@
-temporalio==1.0.0          # Temporal Python SDK for workflow execution
-asyncio==3.4.3             # Required for asynchronous handling in Python
-requests==2.26.0           # To make HTTP requests to external services (Order, User, Payment services)
-python-dotenv==0.21.0      # If you use .env files for environment variables (Optional)
-kafka-python==2.0.2        # Only if you plan to trigger workflows via Kafka messages
-loguru==0.6.0              # Recommended for structured logging and debugging (Optional)
