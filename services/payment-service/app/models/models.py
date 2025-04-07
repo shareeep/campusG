@@ -6,11 +6,10 @@ from sqlalchemy import Numeric
 
 class PaymentStatus(enum.Enum):
     """Status of the payment"""
-    INITIATING = "INITIATING"
-    AUTHORIZED = "AUTHORIZED"
-    RELEASED = "RELEASED"    # Payment released to runner
-    REVERTED = "REVERTED"    # Payment reverted/refunded to customer
-    FAILED = "FAILED"
+    AUTHORIZED = "AUTHORIZED"  # Payment held/reserved but not released
+    SUCCEEDED = "SUCCEEDED"    # Payment released to runner successfully
+    REVERTED = "REVERTED"      # Payment authorization rolled back
+    FAILED = "FAILED"          # Payment failed
 
 class Payment(db.Model):
     """Model for payment transactions"""
@@ -20,8 +19,9 @@ class Payment(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     payment_id = db.Column(db.String(36), unique=True, default=lambda: str(uuid.uuid4()))
     
-    # Store Stripe payment intent ID
+    # Store Stripe payment intent ID and transfer ID
     payment_intent_id = db.Column(db.String(255), nullable=True)
+    transfer_id = db.Column(db.String(255), nullable=True)
     
     # Order and user info
     # Order ID should be unique for each payment
@@ -32,7 +32,10 @@ class Payment(db.Model):
     # Payment details
     amount = db.Column(Numeric(10, 2), nullable=False)
     # Use SQLAlchemy's Enum type for better type safety and potential DB-level constraints
-    status = db.Column(db.Enum(PaymentStatus, name='payment_status_enum', create_type=False), nullable=False, default=PaymentStatus.INITIATING, index=True)
+    status = db.Column(db.Enum(PaymentStatus, name='payment_status_enum', create_type=False), 
+                      nullable=False, 
+                      default=PaymentStatus.AUTHORIZED,  # Start directly in AUTHORIZED state
+                      index=True)
     description = db.Column(db.String(255), nullable=True)
 
     # Timestamps
@@ -53,6 +56,7 @@ class Payment(db.Model):
             'status': self.status.value, # Return the enum's value (string)
             'description': self.description,
             'paymentIntentId': self.payment_intent_id,
+            'transferId': self.transfer_id,
             'createdAt': self.created_at.isoformat(),
             'updatedAt': self.updated_at.isoformat()
         }

@@ -8,6 +8,7 @@ that require HTTP communication instead of Kafka.
 import json
 import logging
 import os
+import uuid
 import requests
 from requests.exceptions import RequestException
 from datetime import datetime
@@ -15,8 +16,16 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Configuration - can be overridden with environment variables
-TIMER_SERVICE_URL = os.getenv('TIMER_SERVICE_URL', 'http://timer-service:3000')
+TIMER_SERVICE_URL = os.getenv('TIMER_SERVICE_URL', 'https://personal-7ndmvxwm.outsystemscloud.com/Timer_CS/rest/TimersAPI')
 HTTP_TIMEOUT = int(os.getenv('HTTP_TIMEOUT_SECONDS', '5'))
+
+# Custom JSON encoder to handle UUID objects
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, uuid.UUID):
+            # Convert UUID to string
+            return str(obj)
+        return super().default(obj)
 
 class HttpClient:
     """HTTP client for external service communication"""
@@ -40,19 +49,27 @@ class HttpClient:
         Args:
             order_id (str): The ID of the order
             customer_id (str): The ID of the customer
-            timeout_at (str): ISO8601 timestamp when the timer should trigger
-            correlation_id (str): Correlation ID for tracking (saga_id)
+            timeout_at (str): ISO8601 timestamp when the timer should trigger (not used by current API)
+            correlation_id (str): Correlation ID for tracking (saga_id) (not used by current API)
             
         Returns:
             tuple: (success, response_data)
         """
-        timer_url = f"{self.base_urls['timer']}/api/timers"
+        # Use the correct endpoint for the Timer Service
+        timer_url = f"{self.base_urls['timer']}/StartTimer"
         
+        # Convert any UUID objects to strings to ensure JSON serialization works
+        if isinstance(order_id, uuid.UUID):
+            order_id = str(order_id)
+        if isinstance(customer_id, uuid.UUID):
+            customer_id = str(customer_id)
+        
+        # Format the payload according to the API's expected format
+        # Note: PascalCase field names and empty RunnerId
         payload = {
-            'order_id': order_id,
-            'customer_id': customer_id,
-            'timeout_at': timeout_at,
-            'saga_id': correlation_id
+            'OrderId': order_id,
+            'CustomerId': customer_id,
+            'RunnerId': ""  # Empty string as required by the API
         }
         
         logger.info(f"Sending timer request to {timer_url} for order {order_id}")
@@ -61,16 +78,23 @@ class HttpClient:
             response = requests.post(
                 timer_url,
                 json=payload,
+                headers={"Content-Type": "application/json"},
                 timeout=HTTP_TIMEOUT
             )
             
-            # Check for success
-            response.raise_for_status()
-            
-            response_data = response.json()
-            logger.info(f"Timer service response: {response_data}")
-            
-            return True, response_data
+            # Check for success (2xx status code)
+            if 200 <= response.status_code < 300:
+                try:
+                    response_data = response.json()
+                except ValueError:
+                    logger.warning(f"Timer service returned non-JSON response: {response.text}")
+                    response_data = {"message": "Timer started (non-JSON response)"}
+                
+                logger.info(f"Timer service response: {response_data}")
+                return True, response_data
+            else:
+                logger.error(f"Timer service returned error status: {response.status_code}, body: {response.text}")
+                return False, {'error': f"HTTP {response.status_code}: {response.text}"}
             
         except RequestException as e:
             logger.error(f"HTTP error starting timer for order {order_id}: {str(e)}")

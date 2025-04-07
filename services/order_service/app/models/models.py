@@ -27,6 +27,7 @@ class Order(db.Model):
     delivery_fee = db.Column(db.Numeric(5, 2), nullable=False)
     delivery_location = db.Column(db.String(255), nullable=False)
     order_status = db.Column(SQLAlchemyEnum(OrderStatus, native_enum=False), nullable=False, default=OrderStatus.PENDING, index=True)
+    saga_id = db.Column(db.String(36), nullable=True, index=True) # Added saga_id column
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime, nullable=True)
@@ -45,6 +46,7 @@ class Order(db.Model):
             'deliveryFee': float(self.delivery_fee),
             'deliveryLocation': self.delivery_location,
             'orderStatus': self.order_status.name,
+            'sagaId': self.saga_id, # Added saga_id to dict representation
             'createdAt': self.created_at.isoformat(),
             'updatedAt': self.updated_at.isoformat(),
             'completedAt': self.completed_at.isoformat() if self.completed_at else None

@@ -3,16 +3,24 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone # Added timezone import
 
 from kafka import KafkaConsumer, KafkaProducer
+import uuid
+import json
+from decimal import Decimal
+
+# Import necessary components from the app
+from app import db
+from app.models.models import Order, OrderStatus
+from app.utils.calculations import calculate_food_total, calculate_delivery_fee # Import from utils
 
 logger = logging.getLogger(__name__)
 
 # Kafka Configuration
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
-ORDER_COMMANDS_TOPIC = 'order-commands'    # Topic to consume commands from
-ORDER_EVENTS_TOPIC = 'order-events'        # Topic to publish events to
+ORDER_COMMANDS_TOPIC = 'order_commands'    # Topic to consume commands from (Changed hyphen to underscore)
+ORDER_EVENTS_TOPIC = 'order_events'        # Topic to publish events to
 CONSUMER_GROUP_ID = 'order-service-group'  # Unique consumer group ID
 
 class KafkaService:
@@ -269,7 +277,9 @@ def init_kafka(app):
 
     # Register command handlers here
     # Example: register_create_order_handler(kafka_client)
-    # Example: register_update_order_status_handler(kafka_client)
+    # Register command handlers
+    kafka_client.register_command_handler('create_order', handle_create_order_command)
+    kafka_client.register_command_handler('update_order_status', handle_update_order_status_command) # Register new handler
 
     if kafka_client.consumer:
         kafka_client.start_consuming()
@@ -288,3 +298,126 @@ def init_kafka(app):
 
     logger.info("Kafka client initialization sequence completed.")
     return kafka_client
+
+
+# --- Command Handlers ---
+
+def handle_create_order_command(correlation_id, payload):
+    """Handles the 'create_order' command received from Kafka."""
+    logger.info(f"Handling create_order command for saga {correlation_id}")
+    try:
+        customer_id = payload.get('customer_id')
+        order_details = payload.get('order_details')
+        saga_id = payload.get('saga_id') # Saga ID is expected from orchestrator
+
+        if not customer_id or not order_details or not saga_id:
+            logger.error(f"Missing required fields in create_order payload for saga {correlation_id}")
+            # Optionally publish a failure event
+            # kafka_client.publish_event('order.creation_failed', {'error': 'Missing fields'}, correlation_id)
+            return
+
+        # Reuse calculation logic from API routes
+        food_items = order_details.get('foodItems', [])
+        delivery_location = order_details.get('deliveryLocation', '')
+        food_fee = calculate_food_total(food_items)
+        delivery_fee = calculate_delivery_fee(delivery_location)
+
+        # Create a new order
+        order = Order(
+            order_id=str(uuid.uuid4()), # Generate a new unique ID for the order itself
+            cust_id=customer_id,
+            order_description=json.dumps(food_items),
+            food_fee=food_fee,
+            delivery_fee=delivery_fee,
+            delivery_location=delivery_location,
+            order_status=OrderStatus.PENDING, # Initial status for saga-created orders
+            saga_id=saga_id # Store the saga ID for reference
+        )
+
+        # Save to database
+        db.session.add(order)
+        db.session.commit()
+        logger.info(f"Order {order.order_id} created successfully in DB for saga {correlation_id}")
+
+        # Publish the order.created event, passing the correlation_id from the command
+        event_payload = {
+            'order_id': order.order_id,
+            'customer_id': order.cust_id,
+            'status': order.order_status.name,
+            'saga_id': saga_id
+            # Include other relevant details if needed
+        }
+        success = publish_order_created_event(kafka_client, event_payload, correlation_id)
+
+        if success:
+            logger.info(f"Published order.created event for order {order.order_id}, saga {correlation_id}")
+        else:
+            logger.error(f"Failed to publish order.created event for order {order.order_id}, saga {correlation_id}")
+            # Consider compensating action if event publishing fails critically
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error handling create_order command for saga {correlation_id}: {e}", exc_info=True)
+        # Optionally publish a failure event
+        # kafka_client.publish_event('order.creation_failed', {'error': str(e)}, correlation_id)
+
+
+def handle_update_order_status_command(correlation_id, payload):
+    """Handles the 'update_order_status' command received from Kafka."""
+    logger.info(f"Handling update_order_status command for saga {correlation_id}")
+    try:
+        order_id = payload.get('order_id')
+        new_status_str = payload.get('status')
+
+        if not order_id or not new_status_str:
+            logger.error(f"Missing order_id or status in update_order_status payload for saga {correlation_id}")
+            # Optionally publish failure event
+            # kafka_client.publish_event('order.status_update_failed', {'error': 'Missing fields'}, correlation_id)
+            return
+
+        # Find the order
+        order = Order.query.get(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for status update (saga {correlation_id})")
+            # Optionally publish failure event
+            # kafka_client.publish_event('order.status_update_failed', {'error': 'Order not found'}, correlation_id)
+            return
+
+        # Validate and set the new status
+        try:
+            new_status = OrderStatus[new_status_str] # Convert string to enum
+        except KeyError:
+            logger.error(f"Invalid status '{new_status_str}' received for order {order_id} (saga {correlation_id})")
+            # Optionally publish failure event
+            # kafka_client.publish_event('order.status_update_failed', {'error': 'Invalid status'}, correlation_id)
+            return
+
+        order.order_status = new_status
+        order.updated_at = datetime.now(timezone.utc)
+        db.session.commit()
+        logger.info(f"Order {order_id} status updated to {new_status.name} successfully for saga {correlation_id}")
+
+        # Publish the order.status_updated event
+        event_payload = {
+            'order_id': order.order_id,
+            'status': order.order_status.name,
+            'saga_id': order.saga_id # Include saga_id if available and needed
+        }
+        # Publish the specific 'order.status_updated' event expected by the orchestrator
+        success = kafka_client.publish_event(
+            'order.status_updated', # Correct event type
+            event_payload,
+            correlation_id
+        )
+
+        if success:
+            logger.info(f"Published order.status_updated event for order {order_id}, saga {correlation_id}")
+        else:
+            logger.error(f"Failed to publish order.status_updated event for order {order_id}, saga {correlation_id}")
+            # Consider compensating action
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error handling update_order_status command for saga {correlation_id}: {e}", exc_info=True)
+        # Optionally publish failure event
+        # kafka_client.publish_event('order.status_update_failed', {'error': str(e)}, correlation_id)

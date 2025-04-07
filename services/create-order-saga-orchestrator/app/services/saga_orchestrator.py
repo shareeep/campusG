@@ -204,16 +204,35 @@ class CreateOrderSagaOrchestrator:
 
             # Next step: Authorize payment
             kafka_svc = current_app.kafka_service
+            # Extract payment info received from user service event
             user_payment_info = payload.get('payment_info', {})
+            stripe_customer_id = user_payment_info.get('stripeCustomerId')
+            payment_method_id = user_payment_info.get('paymentMethodId')
+
+            # Construct the payload expected by the Payment Service
+            # Ensure amount is in cents (integer)
+            amount_cents = int(saga_state.payment_amount * 100)
+            
+            payment_payload = {
+                'order_id': saga_state.order_id,
+                'customer': {
+                    'clerkUserId': saga_state.customer_id, # Use the customer_id stored in saga state
+                    'stripeCustomerId': stripe_customer_id,
+                    'userStripeCard': { # Nest payment method ID
+                        'payment_method_id': payment_method_id
+                    }
+                },
+                'order': {
+                    'amount': amount_cents,
+                    'description': f"Payment for order {saga_state.order_id}" # Optional description
+                },
+                # Add the return_url for 3DS flows
+                'return_url': 'https://localhost:5173/customer/history'
+            }
 
             success, _ = publish_authorize_payment_command(
                 kafka_svc,
-                {
-                    'order_id': saga_state.order_id,
-                    'customer_id': saga_state.customer_id,
-                    'amount': saga_state.payment_amount,
-                    'payment_info': user_payment_info
-                },
+                payment_payload, # Send the correctly structured payload
                 correlation_id
             )
 
@@ -279,10 +298,10 @@ class CreateOrderSagaOrchestrator:
             logger.info(f"Order status updated to CREATED for saga {correlation_id}")
 
             # Next step: Start order timeout timer via HTTP
-            # Generate timeout 30 minutes from now
+            # Generate timeout 30 minutes from now - note: not used by current Timer API
             timeout_at = (datetime.utcnow() + timedelta(minutes=30)).isoformat()
 
-            # Try HTTP first, fall back to Kafka if HTTP fails
+            # Try HTTP request to timer service
             try:
                 # Use HTTP client to call timer service
                 logger.info(f"Attempting to start timer via HTTP for order {saga_state.order_id}")
@@ -290,45 +309,41 @@ class CreateOrderSagaOrchestrator:
                     saga_state.order_id,
                     saga_state.customer_id,
                     timeout_at,
-                    correlation_id
+                    correlation_id  # Still pass correlation_id even though current API doesn't use it
                 )
 
-                if success:
-                    logger.info(f"Timer started via HTTP for order {saga_state.order_id}: {response}")
-                    # Don't mark saga as completed yet - wait for timer.started event via Kafka
-                    return
-                else:
-                    logger.warning(f"Failed to start timer via HTTP: {response.get('error')}")
-                    logger.warning("Falling back to Kafka")
-            except Exception as e:
-                logger.error(f"Error using HTTP client for timer: {str(e)}")
-                logger.warning("Falling back to Kafka")
-
-            # Fallback: Try Kafka if HTTP failed
-            kafka_svc = current_app.kafka_service
-            
-            success, _ = publish_start_timer_command(
-                kafka_svc,
-                {
-                    'order_id': saga_state.order_id,
-                    'customer_id': saga_state.customer_id,
-                    'timeout_at': timeout_at
-                },
-                correlation_id
-            )
-
-            if not success:
-                logger.error(f"Failed to publish start_timer command for saga {correlation_id}")
-                # Not critical for the success of the saga
-                logger.warning("Continuing without timer")
-
-                # Mark saga as completed
+                # Always mark saga as completed since the timer is non-critical
                 saga_state.update_status(SagaStatus.COMPLETED)
                 saga_state.completed_at = datetime.utcnow()
                 db.session.commit()
 
+                if success:
+                    logger.info(f"Timer started via HTTP for order {saga_state.order_id}: {response}")
+                    logger.info(f"Saga {correlation_id} completed after HTTP timer start")
+                else:
+                    logger.warning(f"Failed to start timer via HTTP: {response.get('error')}")
+                    logger.info(f"Saga {correlation_id} completed despite timer failure")
+
+            except Exception as e:
+                # Exception during timer service call
+                logger.error(f"Error starting timer for order {saga_state.order_id}: {str(e)}")
+                
+                # Mark saga as completed anyway since timer is non-critical
+                saga_state.update_status(SagaStatus.COMPLETED)
+                saga_state.completed_at = datetime.utcnow()
+                db.session.commit()
+                logger.info(f"Saga {correlation_id} completed despite timer error")
+
         except Exception as e:
             logger.error(f"Error handling order.status_updated for correlation_id {correlation_id}: {str(e)}")
+            # Attempt to mark as completed even if there was an error
+            try:
+                saga_state.update_status(SagaStatus.COMPLETED)
+                saga_state.completed_at = datetime.utcnow()
+                db.session.commit()
+                logger.info(f"Marked saga {correlation_id} as completed despite error in timer setup")
+            except Exception as commit_error:
+                logger.error(f"Failed to update saga status after error: {str(commit_error)}")
 
     def handle_timer_started(self, correlation_id, payload):
         """Handle timer.started event"""

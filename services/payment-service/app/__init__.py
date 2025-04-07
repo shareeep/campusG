@@ -101,13 +101,13 @@ def create_app(config=None):
         try:
             # Import Kafka client instance and init function
             from app.services.kafka_service import kafka_client, init_kafka
-            # Import the command handlers
-            from app.services.stripe_service import handle_authorize_payment_command
-            from app.services.release_funds_stub import handle_release_funds_command
+            # Import the command handler functions
+            from app.services.stripe_service import handle_authorize_payment_command, handle_release_payment_command, handle_revert_payment_command
 
             # Register the handlers BEFORE starting the consumer
             kafka_client.register_command_handler('authorize_payment', handle_authorize_payment_command)
-            kafka_client.register_command_handler('release_funds', handle_release_funds_command)
+            kafka_client.register_command_handler('release_payment', handle_release_payment_command)
+            kafka_client.register_command_handler('revert_payment', handle_revert_payment_command)
 
             # Store the app instance in the KafkaService
             kafka_client.app = app

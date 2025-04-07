@@ -2,7 +2,7 @@ import { loadStripe } from '@stripe/stripe-js';
 
 // Replace with your actual Stripe publishable key
 const stripePromise = loadStripe(
-  "k_test_51R3w7tQR8BO665MwdItLEUCpoGtnkeSyXbD2yiyGs7BpkLREWVqndrcJD9XVetcGMJLjdcm5YZ5yP3Zf06x3WW4w00pzCEey01"
+  "pk_test_51R3w7tQR8BO665MwdItLEUCpoGtnkeSyXbD2yiyGs7BpkLREWVqndrcJD9XVetcGMJLjdcm5YZ5yP3Zf06x3WW4w00pzCEey01"
 );
 
 // Simple interfaces with minimal type requirements

@@ -181,48 +181,52 @@ class KafkaService:
 
         logger.info(f"Processing message type: {message_type} with correlation_id: {correlation_id}")
 
-        if message_type == 'get_user_payment_info':
-            clerk_user_id = payload.get('clerkUserId')
-            order_data = payload.get('order', {}) # Get order details like amount/description
+        # Corrected the check to match the command type sent by the orchestrator
+        if message_type == 'get_payment_info':
+            # The orchestrator sends 'user_id' in the payload for this command
+            user_id = payload.get('user_id')
 
-            if not clerk_user_id or not correlation_id:
-                logger.error("Missing clerkUserId or correlation_id in get_user_payment_info message.")
+            if not user_id or not correlation_id:
+                logger.error("Missing user_id or correlation_id in get_payment_info message.")
+                # Optionally publish failure event if needed by orchestrator
+                # self.publish_payment_info_failed(correlation_id, "Missing user_id or correlation_id")
                 return # Cannot process without these
 
             try:
-                user = User.query.filter_by(clerk_user_id=clerk_user_id).first()
+                # Assuming user_id from the command corresponds to clerk_user_id in the User model
+                # This might need adjustment if user_id is a different identifier
+                user = User.query.filter_by(clerk_user_id=user_id).first()
 
                 if not user:
-                    logger.warning(f"User not found for clerkUserId: {clerk_user_id}")
+                    logger.warning(f"User not found for user_id (clerk_user_id): {user_id}")
                     self.publish_payment_info_failed(correlation_id, "User not found")
                     return
 
                 if not user.stripe_customer_id:
-                    logger.warning(f"Stripe customer ID missing for user: {clerk_user_id}")
+                    logger.warning(f"Stripe customer ID missing for user: {user_id}")
                     self.publish_payment_info_failed(correlation_id, "Stripe customer ID not configured for user")
                     return
 
-                if not user.user_stripe_card or not user.user_stripe_card.get('payment_method_id'):
-                    logger.warning(f"Default payment method missing for user: {clerk_user_id}")
+                # Check for payment method details stored in user_stripe_card JSONB field
+                payment_method_id = user.user_stripe_card.get('payment_method_id') if user.user_stripe_card else None
+                if not payment_method_id:
+                    logger.warning(f"Default payment method ID missing for user: {user_id}")
                     self.publish_payment_info_failed(correlation_id, "Default payment method not set for user")
                     return
 
                 # Success case: Prepare and publish the response event
+                # The payload structure should match what the orchestrator expects
+                # based on its handle_payment_info_retrieved method.
                 response_payload = {
-                    "customer": {
-                        "clerkUserId": user.clerk_user_id,
+                    "payment_info": {
                         "stripeCustomerId": user.stripe_customer_id,
-                        # Ensure user_stripe_card is serializable JSON
-                        "userStripeCard": user.user_stripe_card if isinstance(user.user_stripe_card, dict) else {}
-                    },
-                    "order": { # Include order details received in the request
-                        "amount": order_data.get("amount"),
-                        "description": order_data.get("description")
+                        "paymentMethodId": payment_method_id
+                        # Include other fields if needed by the orchestrator/payment service
                     }
                 }
 
                 response_message = {
-                    "type": "user.payment_info_retrieved",
+                    "type": "user.payment_info_retrieved", # Event type expected by orchestrator
                     "correlation_id": correlation_id,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "payload": response_payload,
@@ -232,10 +236,12 @@ class KafkaService:
                 logger.info(f"Published user.payment_info_retrieved for correlation_id: {correlation_id}")
 
             except Exception as e:
-                logger.error(f"Error retrieving payment info for user {clerk_user_id}: {e}", exc_info=True)
+                # Catch exceptions during user lookup or processing
+                logger.error(f"Error retrieving payment info for user {user_id}: {e}", exc_info=True)
                 self.publish_payment_info_failed(correlation_id, f"Internal server error: {str(e)}")
 
         else:
+            # Log unhandled message types
             logger.warning(f"Unhandled message type received: {message_type}")
 
     def publish_payment_info_failed(self, correlation_id, reason):

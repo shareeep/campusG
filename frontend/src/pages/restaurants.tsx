@@ -1,10 +1,7 @@
-import { Search, Filter, User as UserIcon } from 'lucide-react';
+import { Search, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useBackendUser } from '@/lib/useBackendUser';
 
 export function RestaurantsPage() {
-  const { backendUser, clerkUser, loading, error } = useBackendUser();
-  
   const restaurants = [
     {
       id: 1,
@@ -37,48 +34,6 @@ export function RestaurantsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* User Profile Section */}
-      {loading ? (
-        <div className="bg-white p-4 rounded-lg shadow-md mb-8">
-          <p className="text-gray-500">Loading user data...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 p-4 rounded-lg shadow-md mb-8">
-          <p className="text-red-500">Error loading user data: {error}</p>
-        </div>
-      ) : backendUser ? (
-        <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-          <div className="flex items-center space-x-4">
-            <div className="bg-blue-100 p-3 rounded-full">
-              <UserIcon className="h-6 w-6 text-blue-500" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold">{backendUser.firstName} {backendUser.lastName}</h2>
-              <p className="text-gray-600">{backendUser.email}</p>
-              {backendUser.phoneNumber && <p className="text-gray-500 text-sm">{backendUser.phoneNumber}</p>}
-            </div>
-          </div>
-          <div className="mt-4 border-t pt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-gray-500 text-sm">Customer Rating</p>
-                <p className="font-medium">{backendUser.customerRating} ★</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-sm">Runner Rating</p>
-                <p className="font-medium">{backendUser.runnerRating} ★</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : clerkUser ? (
-        <div className="bg-yellow-50 p-4 rounded-lg shadow-md mb-8">
-          <p className="text-yellow-700">
-            Welcome, {clerkUser.firstName  || clerkUser.emailAddresses[0].emailAddress}! This is cool!  
-          </p>
-        </div>
-      ) : null}
-
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold">Campus Restaurants</h1>
         <div className="flex gap-4">

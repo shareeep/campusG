@@ -5,11 +5,10 @@ import { Button } from '@/components/ui/button';
 interface CreditCardFormProps {
   onSave: (paymentMethodId: string) => Promise<void>;
   defaultErrorMessage?: string | null;
-  userId?: string;
-  userEmail?: string; // Add email prop
+  userEmail?: string; // Email for billing details
 }
 
-export function CreditCardForm({ onSave, defaultErrorMessage, userId, userEmail }: CreditCardFormProps) {
+export function CreditCardForm({ onSave, defaultErrorMessage, userEmail }: CreditCardFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState<string | null>(defaultErrorMessage || null);
@@ -20,11 +19,13 @@ export function CreditCardForm({ onSave, defaultErrorMessage, userId, userEmail 
     e.preventDefault();
     
     if (!stripe || !elements) {
+      setError('Stripe is not initialized');
       return;
     }
     
     const cardElement = elements.getElement(CardElement);
     if (!cardElement) {
+      setError('Card element not found');
       return;
     }
     
@@ -32,32 +33,53 @@ export function CreditCardForm({ onSave, defaultErrorMessage, userId, userEmail 
     setError(null);
     
     try {
-      // Step 1: Create a Payment Method - use userEmail if available
-      const { error: createError, paymentMethod } = await stripe.createPaymentMethod({
-        type: 'card',
-        card: cardElement,
-        // Use the email address from user profile instead of ID
-        billing_details: userEmail ? { email: userEmail } : undefined
-      });
+      // Store a reference to the paymentMethod ID before unmounting the element
+      let paymentMethodId: string | null = null;
       
-      if (createError) {
-        setError(createError.message || 'An error occurred with your card');
+      try {
+        // Step 1: Create a Payment Method - use userEmail if available
+        const { error: createError, paymentMethod } = await stripe.createPaymentMethod({
+          type: 'card',
+          card: cardElement,
+          // Use the email address from user profile instead of ID
+          billing_details: userEmail ? { email: userEmail } : undefined
+        });
+        
+        if (createError) {
+          setError(createError.message || 'An error occurred with your card');
+          setLoading(false);
+          return;
+        }
+        
+        if (!paymentMethod || !paymentMethod.id) {
+          setError('Failed to create payment method');
+          setLoading(false);
+          return;
+        }
+        
+        // Store the ID for use after clearing the element
+        paymentMethodId = paymentMethod.id;
+        
+        // Set success here so we know the card details were valid
+        setSuccess(true);
+        
+        // Clear the card element BEFORE making the API call to save
+        cardElement.clear();
+      } catch (elemError) {
+        console.error('Stripe element error:', elemError);
+        setError('Error processing card details. Please try again.');
         setLoading(false);
         return;
       }
       
-      if (!paymentMethod || !paymentMethod.id) {
-        setError('Failed to create payment method');
-        setLoading(false);
-        return;
+      // Only proceed if we got a payment method ID
+      if (paymentMethodId) {
+        // Step 2: Setup for future usage by creating and attaching to a customer
+        // This is now handled by the backend in the update-payment endpoint
+        await onSave(paymentMethodId);
+      } else {
+        setError('Failed to generate payment method');
       }
-      
-      // Step 2: Setup for future usage by creating and attaching to a customer
-      // This is now handled by the backend in the update-payment endpoint
-      await onSave(paymentMethod.id);
-      
-      setSuccess(true);
-      cardElement.clear();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {

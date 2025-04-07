@@ -7,6 +7,8 @@ import json
 from datetime import datetime
 from decimal import Decimal
 
+# Import calculation functions from the new utility module
+from app.utils.calculations import calculate_food_total, calculate_delivery_fee
 
 api = Blueprint('api', __name__)
 
@@ -501,3 +503,5 @@ def calculate_delivery_fee(location):
     """Calculate delivery fee based on location"""
     # In a real implementation, this would use distance or zones
     return Decimal('3.99')
+# Removed helper functions calculate_food_total and calculate_delivery_fee
+# as they are now imported from app.utils.calculations

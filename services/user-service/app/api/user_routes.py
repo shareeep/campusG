@@ -136,9 +136,18 @@ def get_payment_info(clerk_user_id):
         if not user.user_stripe_card:
             return jsonify({'success': False, 'message': 'User has no payment method'}), 400
             
+        # Transform the payment info to match what frontend expects
+        payment_info = {
+            'payment_method_id': user.user_stripe_card.get('payment_method_id', ''),
+            'last_four': user.user_stripe_card.get('last4', ''),  # Transform last4 to last_four
+            'card_type': user.user_stripe_card.get('brand', ''),  # Transform brand to card_type
+            'expiry_month': user.user_stripe_card.get('exp_month', ''),  # Transform exp_month to expiry_month
+            'expiry_year': user.user_stripe_card.get('exp_year', ''),    # Transform exp_year to expiry_year
+        }
+            
         return jsonify({
             'success': True,
-            'payment_info': user.user_stripe_card
+            'payment_info': payment_info
         }), 200
         
     except Exception as e:
@@ -369,282 +378,46 @@ def list_user_ids():
         current_app.logger.error(f"Error retrieving user IDs: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to retrieve user IDs: {str(e)}"}), 500
 
-@api.route('/webhook/clerk', methods=['POST'])
-def clerk_webhook():
-    """
-    Handle webhooks from Clerk
+@api.route('/user/<clerk_user_id>/connect-account', methods=['PUT'])
+def update_connect_account(clerk_user_id):
+    """Update a user's Stripe Connect account ID
     
-    This endpoint processes user-related events from Clerk:
-    - user.created: Creates a new user
-    - user.updated: Updates user information
-    - user.deleted: Handles user deletion
+    Request body should contain:
+    {
+        "stripe_connect_account_id": "acct_123456789"
+    }
     """
     try:
-        # Get the raw request data for logging
-        request_data = request.get_data()
+        user = User.query.get(clerk_user_id)
         
-        # Parse the JSON data
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+            
         data = request.json
         
-        if not data or 'type' not in data or 'data' not in data:
-            current_app.logger.error(f"Invalid webhook payload: {request_data}")
-            return jsonify({'success': False, 'message': 'Invalid webhook payload'}), 400
+        if not data or 'stripe_connect_account_id' not in data:
+            return jsonify({'success': False, 'message': 'Connect account ID not provided'}), 400
             
-        event_type = data['type']
+        stripe_connect_account_id = data['stripe_connect_account_id']
         
-        current_app.logger.info(f"Received Clerk webhook: {event_type}")
-        
-        # Process based on event type
-        if event_type == 'user.created':
-            handle_user_created(data['data'])
-        elif event_type == 'user.updated':
-            handle_user_updated(data['data'])
-        elif event_type == 'user.deleted':
-            handle_user_deleted(data['data'])
-        else:
-            current_app.logger.info(f"Unhandled event type: {event_type}")
-            
-        # Always return success to Clerk to acknowledge receipt
-        return jsonify({'success': True, 'message': f'Processed {event_type} event'}), 200
-        
-    except json.JSONDecodeError:
-        current_app.logger.error("Invalid JSON in webhook payload")
-        return jsonify({'success': False, 'message': 'Invalid JSON'}), 400
-    except Exception as e:
-        current_app.logger.error(f"Error processing Clerk webhook: {str(e)}\n{traceback.format_exc()}")
-        # Still return 200 to Clerk to acknowledge receipt
-        return jsonify({'success': False, 'message': f"Error processing webhook: {str(e)}"}), 200
-
-def extract_user_data(user_data):
-    """Extract relevant user data from Clerk's user object"""
-    try:
-        # Get primary email
-        primary_email = None
-        if user_data.get('email_addresses') and len(user_data['email_addresses']) > 0:
-            primary_email = user_data['email_addresses'][0].get('email_address')
-            
-        # Get primary phone
-        primary_phone = None
-        if user_data.get('phone_numbers') and len(user_data['phone_numbers']) > 0:
-            primary_phone = user_data['phone_numbers'][0].get('phone_number')
-        
-        # Get timestamps if available
-        created_at = None
-        if user_data.get('created_at'):
-            try:
-                # Handle ISO format string
-                if isinstance(user_data['created_at'], str):
-                    created_at = datetime.fromisoformat(user_data['created_at'].replace('Z', '+00:00'))
-                # Handle Unix timestamp (integer)
-                elif isinstance(user_data['created_at'], (int, float)):
-                    created_at = datetime.fromtimestamp(user_data['created_at'], tz=timezone.utc)
-                else:
-                    created_at = datetime.now(timezone.utc)
-            except (ValueError, TypeError):
-                created_at = datetime.now(timezone.utc)
-                
-        updated_at = None
-        if user_data.get('updated_at'):
-            try:
-                # Handle ISO format string
-                if isinstance(user_data['updated_at'], str):
-                    updated_at = datetime.fromisoformat(user_data['updated_at'].replace('Z', '+00:00'))
-                # Handle Unix timestamp (integer)
-                elif isinstance(user_data['updated_at'], (int, float)):
-                    updated_at = datetime.fromtimestamp(user_data['updated_at'], tz=timezone.utc)
-                else:
-                    updated_at = datetime.now(timezone.utc)
-            except (ValueError, TypeError):
-                updated_at = datetime.now(timezone.utc)
-            
-        return {
-            'clerk_user_id': user_data.get('id'),
-            'email': primary_email,
-            'first_name': user_data.get('first_name', ''),
-            'last_name': user_data.get('last_name', ''),
-            'phone_number': primary_phone,
-            'username': user_data.get('username'),
-            'created_at': created_at,
-            'updated_at': updated_at
-        }
-    except Exception as e:
-        current_app.logger.error(f"Error extracting user data: {str(e)}")
-        # Return minimal data
-        return {
-            'clerk_user_id': user_data.get('id'),
-            'email': '',
-            'first_name': '',
-            'last_name': '',
-            'created_at': datetime.now(timezone.utc),
-            'updated_at': datetime.now(timezone.utc)
-        }
-
-def handle_user_created(user_data):
-    """Handle user.created event from Clerk"""
-    try:
-        # Log the raw user data for debugging
-        current_app.logger.debug(f"User data from Clerk: {json.dumps(user_data, default=str)}")
-        
-        # Extract user data
-        data = extract_user_data(user_data)
-        
-        if not data['clerk_user_id']:
-            current_app.logger.error("Clerk user ID missing from user.created event")
-            return
-            
-        # Check if user already exists with this clerk_user_id
-        existing_user = User.query.filter_by(clerk_user_id=data['clerk_user_id']).first()
-        if existing_user:
-            current_app.logger.info(f"User with Clerk ID {data['clerk_user_id']} already exists")
-            return
-            
-        # If we have an email, check if user exists by emai
-        if data['email']:
-            existing_email_user = User.query.filter_by(email=data['email']).first()
-            if existing_email_user:
-                # Update the existing user with the Clerk ID
-                existing_email_user.clerk_user_id = data['clerk_user_id']
-                db.session.commit()
-                current_app.logger.info(f"Updated existing user with Clerk ID {data['clerk_user_id']}")
-                return
-        else:
-            # Generate a placeholder email if none provided
-            current_app.logger.warning("Email missing from user.created event, using placeholder")
-            data['email'] = f"temp_{data['clerk_user_id']}@placeholder.com"
-            
-        # Create new user
-        user = User(
-            clerk_user_id=data['clerk_user_id'],
-            email=data['email'],
-            first_name=data['first_name'] or "",
-            last_name=data['last_name'] or "",
-            phone_number=data['phone_number'],
-            username=data['username'],  # Added username field
-            created_at=data['created_at'] or datetime.now(timezone.utc),
-            updated_at=data['updated_at'] or datetime.now(timezone.utc)
-        )
-        
-        # --- Stripe Customer Creation ---
-        stripe_customer_id = None
-        try:
-            # Get Stripe API key
-            stripe_api_key = current_app.config.get('STRIPE_SECRET_KEY') or os.environ.get('STRIPE_SECRET_KEY')
-            if not stripe_api_key:
-                current_app.logger.error("Stripe API key not configured. Cannot create Stripe customer.")
-            else:
-                stripe.api_key = stripe_api_key
-                # Create Stripe customer
-                customer = stripe.Customer.create(
-                    email=user.email,
-                    name=f"{user.first_name} {user.last_name}".strip(),
-                    metadata={'clerk_user_id': user.clerk_user_id}
-                )
-                stripe_customer_id = customer.id
-                user.stripe_customer_id = stripe_customer_id
-                current_app.logger.info(f"Created Stripe customer {stripe_customer_id} for user {user.clerk_user_id}")
-
-        except Exception as stripe_error:
-            current_app.logger.error(f"Failed to create Stripe customer for user {user.clerk_user_id}: {str(stripe_error)}")
-            # Continue without Stripe ID for now, maybe retry later?
-
-        # --- End Stripe Customer Creation ---
-
-        db.session.add(user)
-        db.session.commit()
-
-        current_app.logger.info(f"Created new user from Clerk with ID {data['clerk_user_id']} (Stripe ID: {stripe_customer_id})")
-
-    except IntegrityError as ie:
-        db.session.rollback()
-        current_app.logger.error(f"Integrity error creating user from Clerk event: {str(ie)}")
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error handling user.created: {str(e)}")
-
-def handle_user_updated(user_data):
-    """Handle user.updated event from Clerk"""
-    try:
-        # Log the raw user data for debugging
-        current_app.logger.debug(f"User update data from Clerk: {json.dumps(user_data, default=str)}")
-        
-        # Extract user data
-        data = extract_user_data(user_data)
-        
-        if not data['clerk_user_id']:
-            current_app.logger.error("Clerk user ID missing from user.updated event")
-            return
-            
-        # Find user by clerk_user_id
-        user = User.query.filter_by(clerk_user_id=data['clerk_user_id']).first()
-        if not user:
-            # If not found by Clerk ID, try by email
-            if data['email']:
-                user = User.query.filter_by(email=data['email']).first()
-                
-            if not user:
-                current_app.logger.warning(f"User not found for update: Clerk ID {data['clerk_user_id']}")
-                # Create the user if they don't exist
-                current_app.logger.info(f"Attempting to create missing user: {data['clerk_user_id']}")
-                handle_user_created(user_data)
-                return
-            else:
-                # Update the clerk_user_id since we found by email
-                user.clerk_user_id = data['clerk_user_id']
-        
-        # Update fields if provided
-        if data['email']:
-            user.email = data['email']
-        if data['first_name'] is not None:
-            user.first_name = data['first_name']
-        if data['last_name'] is not None:
-            user.last_name = data['last_name']
-        if data['phone_number'] is not None:
-            user.phone_number = data['phone_number']
-        
-        # Update username if provided
-        if data['username'] is not None:
-            user.username = data['username']
-            current_app.logger.info(f"Updated username to {data['username']} for user {user.clerk_user_id}")
-        
-        # Update the timestamp using Clerk's timestamp if available
-        user.updated_at = data['updated_at'] or datetime.now(timezone.utc)
+        # Update the Connect account ID
+        user.stripe_connect_account_id = stripe_connect_account_id
+        user.updated_at = datetime.now(timezone.utc)
         db.session.commit()
         
-        current_app.logger.info(f"Updated user from Clerk: {user.clerk_user_id}")
-        
-    except IntegrityError as ie:
-        db.session.rollback()
-        current_app.logger.error(f"Integrity error updating user from Clerk event: {str(ie)}")
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error handling user.updated: {str(e)}")
-
-def handle_user_deleted(user_data):
-    """Handle user.deleted event from Clerk"""
-    try:
-        clerk_user_id = user_data.get('id')
-        if not clerk_user_id:
-            current_app.logger.error("Clerk user ID missing from user.deleted event")
-            return
-            
-        user = User.query.filter_by(clerk_user_id=clerk_user_id).first()
-        if not user:
-            current_app.logger.warning(f"User not found for deletion: Clerk ID {clerk_user_id}")
-            return
-            
-        # You might want to mark users as inactive rather than deleting them // not decided/can ignore
-        # For example, add an 'is_active' field to your User model
-        
-        # For now, just log the deletion request
-        current_app.logger.info(f"Received deletion request for user with Clerk ID {clerk_user_id}")
-        
-        # If you want to actually delete:
-        # db.session.delete(user)
-        # db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': 'Connect account ID updated successfully',
+            'user': {
+                'clerkUserId': user.clerk_user_id,
+                'stripeConnectAccountId': user.stripe_connect_account_id
+            }
+        }), 200
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error handling user.deleted: {str(e)}")
+        current_app.logger.error(f"Error updating Connect account ID for user {clerk_user_id}: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to update Connect account ID: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/payment-methods', methods=['POST'])
 def add_payment_method(clerk_user_id):
@@ -724,3 +497,147 @@ def add_payment_method(clerk_user_id):
         db.session.rollback()
         current_app.logger.error(f"Error adding payment method: {str(e)}")
         return jsonify({"success": False, "description": f"Server error: {str(e)}"}), 500
+
+@api.route('/user/<clerk_user_id>/payment-methods', methods=['DELETE'])
+def delete_payment_method(clerk_user_id):
+    """
+    Delete a user's payment method
+    
+    This endpoint removes the stored payment method for a user.
+    """
+    try:
+        user = User.query.get(clerk_user_id)
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+        if not user.user_stripe_card:
+            return jsonify({'success': False, 'message': 'User has no payment method to delete'}), 400
+            
+        # Clear the payment information
+        user.user_stripe_card = None
+        user.updated_at = datetime.now(timezone.utc)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Payment method deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error deleting payment method for user {clerk_user_id}: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to delete payment method: {str(e)}"}), 500
+
+@api.route('/user/sync-from-frontend', methods=['POST'])
+def sync_user_from_frontend():
+    """
+    Sync a user from frontend Clerk data
+    
+    This endpoint allows the frontend to sync a user without relying on webhooks
+    """
+    try:
+        data = request.json
+        
+        if not data or 'clerk_user_id' not in data:
+            return jsonify({'success': False, 'message': 'Missing clerk_user_id'}), 400
+            
+        clerk_user_id = data['clerk_user_id']
+        
+        # Check if user already exists
+        user = User.query.get(clerk_user_id)
+        
+        if user:
+            # Store existing payment data before updating
+            existing_stripe_card = user.user_stripe_card
+            
+            # Update existing user
+            if 'email' in data:
+                user.email = data['email']
+            if 'first_name' in data:
+                user.first_name = data['first_name']
+            if 'last_name' in data:
+                user.last_name = data['last_name']
+            if 'phone_number' in data:
+                user.phone_number = data['phone_number']
+            if 'username' in data:
+                user.username = data['username']
+                
+            # Ensure we don't lose payment card data during update
+            # Only update if this is explicitly a profile update (not a payment update)
+            if data.get('profile_update_only', False) and existing_stripe_card:
+                user.user_stripe_card = existing_stripe_card
+                current_app.logger.info(f"Preserved payment card data during profile update for user {clerk_user_id}")
+                
+            user.updated_at = datetime.now(timezone.utc)
+        else:
+            # Create new user
+            user = User(
+                clerk_user_id=clerk_user_id,
+                email=data.get('email', ''),
+                first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', ''),
+                phone_number=data.get('phone_number'),
+                username=data.get('username'),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            db.session.add(user)
+            
+            # Create Stripe customer and account if needed
+            try:
+                # Get Stripe API key
+                stripe_api_key = current_app.config.get('STRIPE_SECRET_KEY') or os.environ.get('STRIPE_SECRET_KEY')
+                if stripe_api_key:
+                    stripe.api_key = stripe_api_key
+                    
+                    # 1. Create Stripe customer
+                    customer = stripe.Customer.create(
+                        email=user.email,
+                        name=f"{user.first_name} {user.last_name}".strip(),
+                        metadata={'clerk_user_id': user.clerk_user_id}
+                    )
+                    user.stripe_customer_id = customer.id
+                    current_app.logger.info(f"Created Stripe customer {customer.id} for user {user.clerk_user_id}")
+                    
+                    # 2. Create Stripe Connect Express account
+                    try:
+                        connect_account = stripe.Account.create(
+                            type="express",
+                            country="SG",
+                            email=user.email,
+                            capabilities={
+                                "card_payments": {"requested": True},
+                                "transfers": {"requested": True},
+                            },
+                            metadata={
+                                'clerk_user_id': user.clerk_user_id,
+                                'email': user.email,
+                                'name': f"{user.first_name} {user.last_name}".strip()
+                            }
+                        )
+                        user.stripe_connect_account_id = connect_account.id
+                        current_app.logger.info(f"Created Stripe Connect account {connect_account.id} for user {user.clerk_user_id}")
+                    except Exception as connect_error:
+                        current_app.logger.error(f"Failed to create Stripe Connect account for user {user.clerk_user_id}: {str(connect_error)}")
+            except Exception as stripe_error:
+                current_app.logger.error(f"Stripe error during frontend sync: {str(stripe_error)}")
+        
+        db.session.commit()
+        
+        # Log the payment card data before returning response for debugging
+        current_app.logger.info(f"Card data after update for user {clerk_user_id}: {user.user_stripe_card}")
+        
+        # Make sure the to_dict method includes all payment data
+        user_dict = user.to_dict(include_payment_details=True)
+        
+        return jsonify({
+            'success': True,
+            'message': 'User synced successfully',
+            'user': user_dict
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error syncing user from frontend: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to sync user: {str(e)}"}), 500
