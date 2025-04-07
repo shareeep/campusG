@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { SignInPage } from '@/pages/auth/sign-in';
 import { SignUpPage } from '@/pages/auth/sign-up';
+import { useAuth } from '@clerk/clerk-react';
 import { RootLayout } from '@/components/layout/root-layout';
 import { RoleGuard } from '@/components/role/role-guard';
 import { RoleSelector } from '@/components/role/role-selector';
@@ -12,7 +13,6 @@ import { OrderTrackingPage } from '@/pages/customer/order-tracking';
 import { OrderHistoryPage } from '@/pages/customer/order-history';
 import { AvailableOrdersPage } from '@/pages/runner/available-orders';
 import { ActiveOrdersPage } from '@/pages/runner/active-orders';
-import { useAuth } from '@clerk/clerk-react';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isSignedIn, isLoaded } = useAuth();
@@ -56,9 +56,9 @@ function PublicHome() {
 export function AppRoutes() {
   return (
     <Routes>
-      {/* Public auth routes */}
-      <Route path="/sign-in" element={<SignInPage />} />
-      <Route path="/sign-up" element={<SignUpPage />} />
+      {/* Public auth routes with SSO callback handling */}
+      <Route path="/sign-in/*" element={<SignInPage />} />
+      <Route path="/sign-up/*" element={<SignUpPage />} />
       
       {/* Public home page */}
       <Route path="/" element={<PublicHome />} />

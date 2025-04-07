@@ -7,7 +7,7 @@ export function SignInPage() {
         <SignIn
           routing="path"
           path="/sign-in"
-          fallbackRedirectUrl="/"
+          fallbackRedirectUrl="/role-select"
           appearance={{
             elements: {
               rootBox: "w-full",
