@@ -813,8 +813,10 @@ class CreateOrderSagaOrchestrator:
                             continue
 
                         # Check if saga is in a state where auto-cancellation makes sense
-                        if saga_state.status == SagaStatus.STARTED:
-                            logger.info(f"Expired timer {timer_id} detected for active saga {saga_state.id}. Initiating cancellation.")
+                        # Allow cancellation if STARTED or COMPLETED (order might still be cancellable)
+                        if saga_state.status in [SagaStatus.STARTED, SagaStatus.COMPLETED]:
+                            logger.info(f"Expired timer {timer_id} detected for saga {saga_state.id} in state {saga_state.status.name}. Initiating cancellation.")
+                            # _initiate_cancellation already handles preventing cancellation if already cancelling/cancelled etc.
                             self._initiate_cancellation(saga_state, reason="Order timed out (30 minutes)")
                             expired_count += 1
                         else:
