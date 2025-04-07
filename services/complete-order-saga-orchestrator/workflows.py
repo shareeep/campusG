@@ -18,17 +18,27 @@ class CompleteOrderWorkflow:
             if not updated:
                 raise Exception("Failed to update order to Delivered")
             
-            payment_info = await workflow.execute_activity(
-                "get_user_payment_info",
+            stripe_connect_id = await workflow.execute_activity(
+                "get_user_stripe_connect",
                 clerk_user_id,
                 start_to_close_timeout=timedelta(seconds=10)
             )
-            if not payment_info:
+            if not stripe_connect_id:
                 raise Exception("Failed to retrieve payment info")
             
+            payment_id = await workflow.execute_activity(
+                "get_payment_status",
+                order_id,
+                start_to_close_timeout=timedelta(seconds=10)
+            )
+            if not payment_id:
+                raise Exception("Failed to retrieve payment id")
+
             funds_released = await workflow.execute_activity(
                 "release_funds",
-                payment_info,
+                payment_id,
+                clerk_user_id,
+                stripe_connect_id,
                 start_to_close_timeout=timedelta(seconds=10)
             )
             if not funds_released:
@@ -56,10 +66,10 @@ class CompleteOrderWorkflow:
             )
 
             # Rollback Step 2: Reverse funds release if it was processed
-            if payment_info:
+            if payment_id:
                 await workflow.execute_activity(
                     "rollback_release_funds",
-                    payment_info,
+                    payment_id,
                     start_to_close_timeout=timedelta(seconds=10)
                 )
 

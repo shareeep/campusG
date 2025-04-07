@@ -1,7 +1,7 @@
 from temporalio.client import Client
 from temporalio.worker import Worker
 from workflows import CompleteOrderWorkflow
-from activities import update_order_status, get_user_payment_info, release_funds, rollback_update_order_status, rollback_release_funds
+from activities import update_order_status, get_user_stripe_connect, get_payment_status, release_funds, rollback_update_order_status, rollback_release_funds
 import asyncio
 import concurrent.futures
 
@@ -13,7 +13,7 @@ async def main():
             client,
             task_queue="complete-order-queue",
             workflows=[CompleteOrderWorkflow],
-            activities=[update_order_status, get_user_payment_info, release_funds,
+            activities=[update_order_status, get_user_stripe_connect, get_payment_status, release_funds,
             rollback_update_order_status, rollback_release_funds],
             activity_executor=activity_executor
         )
