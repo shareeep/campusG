@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { Clock, Search, ChevronDown } from 'lucide-react'; // Removed Filter
-import { useAuth } from '@clerk/clerk-react'; // Import useAuth
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { Clock, Search, ChevronDown, Store, MapPin } from "lucide-react"; // Added Store, MapPin icons
+import { useAuth } from "@clerk/clerk-react"; // Import useAuth
 // Removed unused Button import
 import { Input } from '@/components/ui/input';
 import { ReviewDialog } from '@/components/reviews/review-dialog';
@@ -22,6 +22,7 @@ interface BackendOrder {
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
   completedAt: string | null; // ISO string or null
+  storeLocation?: string; // Added optional store location
   // Removed 'review' field as it's not provided by the backend endpoint
 }
 
@@ -182,19 +183,31 @@ export function OrderHistoryPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.orderStatus)}`}>
-                      {order.orderStatus === 'ON_THE_WAY' && ( // Check for ON_THE_WAY
+                      {order.orderStatus === "ON_THE_WAY" && ( // Check for ON_THE_WAY
                         <Clock className="inline-block h-4 w-4 mr-1" />
                       )}
                       {/* Format status name */}
                       {order.orderStatus.replace('_', ' ').charAt(0).toUpperCase() +
                        order.orderStatus.replace('_', ' ').slice(1).toLowerCase()}
                     </span>
-                    {/* Removed redundant Track Order link as whole item is clickable */}
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
+                {/* Add Store and Delivery Location */}
+                <div className="mt-3 text-sm text-gray-600 space-y-1">
+                  {order.storeLocation && (
+                    <div className="flex items-center">
+                      <Store className="h-4 w-4 mr-2 flex-shrink-0 text-gray-500" />
+                      <span>Pickup: {order.storeLocation}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center">
+                     <MapPin className="h-4 w-4 mr-2 flex-shrink-0 text-gray-500" />
+                     <span>Delivery: {order.deliveryLocation}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-3"> {/* Added mt-3 */}
                   <div>
-                    {/* Removed item list display, show total instead */}
+                    {/* Removed item list display */}
                     {/* Consider parsing orderDescription if item details are crucial here */}
                     {order.runnerId && ( // Check if runner is assigned
                       <p className="text-sm text-gray-500 mt-1">

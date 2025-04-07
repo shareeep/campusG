@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Clock, MapPin, Package, History, Loader2 } from 'lucide-react'; // Removed MessageSquare
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/use-toast';
+import { useState, useEffect } from "react";
+import { Clock, MapPin, Package, History, Loader2, Store } from "lucide-react"; // Added Store icon
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from '@clerk/clerk-react'; // Use Clerk auth
 import { OrderLogs } from '@/components/order/order-logs'; // Assuming this component exists and works
 
@@ -14,35 +14,40 @@ interface BackendOrder {
   foodFee: number;
   deliveryFee: number;
   deliveryLocation: string;
-  orderStatus: OrderStatusType; // Use the enum type below
+  orderStatus: OrderStatusType; // Use the type below
   sagaId: string | null;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
   completedAt: string | null; // ISO string or null
+  storeLocation?: string; // Added optional store location
   // Add other fields if needed based on display requirements
   instructions?: string;
 }
 
-// Define structure for parsed items from orderDescription
+// Define structure for items expected *within* the parsed orderDescription JSON
+interface RawOrderItem {
+  item_name?: string; // Use item_name
+  quantity?: string | number;
+  price?: string | number;
+}
+
+// Define structure for parsed items used in rendering
 interface ParsedItem {
     name: string;
     quantity: number;
-    price?: number;
+    price: number; // Make price non-optional for calculations, default to 0 if missing/invalid
 }
 
-// Backend OrderStatus Enum Values
-const OrderStatusEnum = {
-  PENDING: "PENDING",
-  CREATED: "CREATED",
-  ACCEPTED: "ACCEPTED",
-  PLACED: "PLACED", // Runner has placed the order at the store
-  ON_THE_WAY: "ON_THE_WAY", // Runner has picked up the order
-  DELIVERED: "DELIVERED", // Runner has delivered to customer (pending completion)
-  COMPLETED: "COMPLETED", // Saga completed, payment released
-  CANCELLED: "CANCELLED",
-} as const;
-
-type OrderStatusType = keyof typeof OrderStatusEnum;
+// Define possible backend order statuses directly as a type
+type OrderStatusType =
+  | "PENDING"
+  | "CREATED"
+  | "ACCEPTED"
+  | "PLACED" // Runner has placed the order at the store
+  | "ON_THE_WAY" // Runner has picked up the order
+  | "DELIVERED" // Runner has delivered to customer (pending completion)
+  | "COMPLETED" // Saga completed, payment released
+  | "CANCELLED";
 
 // Define the flow for runner status updates
 const runnerStatusFlow: Partial<Record<OrderStatusType, OrderStatusType>> = {
@@ -190,8 +195,14 @@ export function ActiveOrdersPage() {
   // Helper function to parse orderDescription safely
   const parseOrderItems = (description: string): ParsedItem[] => {
     try {
-      const items = JSON.parse(description);
-      return Array.isArray(items) ? items : [];
+      const parsedData = JSON.parse(description);
+      if (!Array.isArray(parsedData)) return [];
+      // Use RawOrderItem type for mapping and conversion
+      return parsedData.map((item: RawOrderItem) => ({
+        name: item.item_name || 'Unknown Item', // Map item_name to name
+        quantity: Number(item.quantity) || 0, // Convert quantity to number
+        price: item.price !== undefined && !isNaN(Number(item.price)) ? Number(item.price) : 0, // Convert price to number, default 0
+      }));
     } catch (e) {
       console.error("Failed to parse order description:", description, e);
       return [];
@@ -211,8 +222,14 @@ export function ActiveOrdersPage() {
         disabled: isLoading,
       };
     } else if (nextStatus) {
+      // Format the next status for better readability
+      const formattedStatus = nextStatus
+        .toLowerCase()
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
       return {
-        text: `Mark as ${nextStatus.replace('_', ' ')}`,
+        text: `Mark as ${formattedStatus}`,
         action: () => handleUpdateStatus(order),
         disabled: isLoading,
       };
@@ -233,7 +250,7 @@ export function ActiveOrdersPage() {
             {showCompleted ? 'Completed Orders' : 'Active Orders'}
           </h1>
           <Button
-            variant="outline"
+            variant="secondary" // Changed from "outline" to "secondary"
             onClick={() => setShowCompleted(!showCompleted)}
           >
             {showCompleted ? (
@@ -296,7 +313,16 @@ export function ActiveOrdersPage() {
 
                 {/* Order Summary */}
                 <div className="bg-gray-50 rounded-lg p-6 space-y-6">
-                  {/* Store Details - Not available directly, maybe parse from description? */}
+                  {/* Store Location */}
+                  {order.storeLocation && (
+                    <div>
+                      <h4 className="font-medium mb-2">Pickup Location (Store):</h4>
+                      <div className="flex items-start text-gray-700">
+                        <Store className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
+                        <p>{order.storeLocation}</p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Order Items */}
                   <div>
@@ -306,9 +332,8 @@ export function ActiveOrdersPage() {
                         {items.map((item, index) => (
                           <div key={index} className="flex justify-between">
                             <span>{item.quantity}x {item.name}</span>
-                            {item.price !== undefined &&
-                              <span className="text-gray-600">${(item.price * item.quantity).toFixed(2)}</span>
-                            }
+                            {/* Price is now always a number, no need for undefined check */}
+                            <span className="text-gray-600">${(item.price * item.quantity).toFixed(2)}</span>
                           </div>
                         ))}
                         <div className="flex justify-between pt-2 border-t text-gray-600">

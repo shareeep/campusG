@@ -264,8 +264,13 @@ export function OrderTrackingPage() {
             {/* Order Summary - Adapt to API response structure */}
             <div className="bg-gray-50 rounded-lg p-6 mb-8">
               <div className="grid gap-6">
-                {/* Store details are not available in API response */}
-                {/* <div> ... Store ... </div> */}
+                {/* Store Location */}
+                {orderData.storeLocation && (
+                  <div>
+                    <h2 className="font-semibold mb-2">Pickup Location (Store)</h2>
+                    <p className="text-gray-700">{orderData.storeLocation}</p>
+                  </div>
+                )}
 
                 {/* Delivery Location */}
                  <div>

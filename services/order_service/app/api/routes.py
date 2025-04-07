@@ -120,13 +120,26 @@ def create_order():
         if not customer_id or not order_details:
             return jsonify({'error': 'Missing required fields: customer_id or order_details'}), 400
         
-        # Calculate amounts
+        # Calculate amounts and get locations
         food_items = order_details.get('foodItems', [])
+        store_location = order_details.get('storeLocation', None) # Get store location
         delivery_location = order_details.get('deliveryLocation', '')
         
         food_fee = calculate_food_total(food_items)
-        delivery_fee = calculate_delivery_fee(delivery_location)
-        
+        # Use deliveryFee from input if provided, otherwise default or calculate (adjust logic as needed)
+        # Assuming order_details contains 'deliveryFee' from the saga payload
+        input_delivery_fee = order_details.get('deliveryFee', None) 
+        # Convert to Decimal, handle potential errors or None
+        try:
+            # Use Decimal for precision, default to 0 if conversion fails or input is None
+            delivery_fee = Decimal(input_delivery_fee) if input_delivery_fee is not None else Decimal('0.00') 
+        except (TypeError, ValueError):
+             # Fallback if conversion fails - could log a warning
+             current_app.logger.warning(f"Invalid deliveryFee '{input_delivery_fee}' received for order. Defaulting to 0.")
+             delivery_fee = Decimal('0.00') 
+             # Alternatively, could recalculate here as a fallback:
+             # delivery_fee = calculate_delivery_fee(delivery_location)
+
         # Create a new order
         order = Order(
             order_id=str(uuid.uuid4()),
@@ -134,6 +147,7 @@ def create_order():
             order_description=json.dumps(food_items),
             food_fee=food_fee,
             delivery_fee=delivery_fee,
+            store_location=store_location, # Add store location here
             delivery_location=delivery_location,
             order_status=OrderStatus.PENDING
         )

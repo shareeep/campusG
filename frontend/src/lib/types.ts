@@ -131,6 +131,7 @@ export interface ApiOrderResponse {
   foodFee: number;
   deliveryFee: number;
   deliveryLocation: string;
+  storeLocation?: string; // Added optional store location
   orderStatus: string; // e.g., "CREATED", "ACCEPTED"
   sagaId: string | null;
   createdAt: string;

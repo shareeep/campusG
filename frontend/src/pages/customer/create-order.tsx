@@ -150,8 +150,9 @@ export function CreateOrderPage() {
           foodItems: validItems.map(item => ({
             item_name: item.name, // Use item_name as per curl example
             quantity: item.quantity,
-            price: item.price, // Send price as number as per curl example
+            price: item.price,
           })),
+          storeLocation: `${storeDetails.name} (${storeDetails.postalCode})`, // Add store location string
           deliveryLocation: deliveryLocationString,
           // Including fees here as they might be expected within order_details
           foodFee: foodFee,

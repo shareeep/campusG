@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 // Removed unused useNavigate import
-import { MapPin, Package, Loader2 } from 'lucide-react'; // Removed MessageSquare, added Loader2
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/use-toast';
+import { MapPin, Package, Loader2, Store } from "lucide-react"; // Added Store icon
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from '@clerk/clerk-react'; // Use Clerk auth
 
 // Define BackendOrder type matching the order service response
@@ -20,6 +20,7 @@ interface BackendOrder {
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
   completedAt: string | null; // ISO string or null
+  storeLocation?: string; // Added optional store location
   // Add other fields if needed based on display requirements
   instructions?: string; // Assuming instructions might be part of orderDescription or separate
 }
@@ -129,7 +130,7 @@ export function AvailableOrdersPage() {
 
   // Define structure for items expected *within* the parsed orderDescription JSON
   interface RawOrderItem {
-    name?: string;
+    item_name?: string; // Changed from name to item_name
     quantity?: string | number;
     price?: string | number;
   }
@@ -145,7 +146,7 @@ export function AvailableOrdersPage() {
       }
       // Map and ensure price is a number or undefined
       return parsedData.map((item: RawOrderItem) => ({ // Use RawOrderItem type here
-        name: item.name || 'Unknown Item', // Provide default name
+        name: item.item_name || 'Unknown Item', // Changed from item.name to item.item_name
         quantity: Number(item.quantity) || 0, // Ensure quantity is a number
         // Explicitly convert price to number, handle non-numeric values
         price: item.price !== undefined && !isNaN(Number(item.price))
@@ -201,7 +202,16 @@ export function AvailableOrdersPage() {
                     </span>
                   </div>
 
-                  {/* Removed Store details as not directly available */}
+                  {/* Store Location */}
+                  {order.storeLocation && (
+                    <div className="mb-4">
+                      <h4 className="font-medium mb-2">Pickup Location (Store):</h4>
+                      <div className="flex items-start text-gray-600">
+                        <Store className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
+                        <p>{order.storeLocation}</p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mb-4">
                     <h4 className="font-medium mb-2">Order Items:</h4>
