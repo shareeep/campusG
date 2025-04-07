@@ -21,6 +21,14 @@ from app.config.kafka_config import (
 
 logger = logging.getLogger(__name__)
 
+# Custom JSON encoder to handle UUID objects
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, uuid.UUID):
+            # Convert UUID to string
+            return str(obj)
+        return super().default(obj)
+
 class KafkaClient:
     """Kafka client for publishing commands and consuming events"""
     
@@ -46,10 +54,10 @@ class KafkaClient:
             return
             
         try:
-            # Create producer
+            # Create producer with custom UUID encoding
             self.producer = KafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
-                value_serializer=lambda v: json.dumps(v).encode('utf-8')
+                value_serializer=lambda v: json.dumps(v, cls=UUIDEncoder).encode('utf-8')
             )
             logger.info(f"Connected to Kafka at {self.bootstrap_servers}")
             
@@ -78,6 +86,10 @@ class KafkaClient:
         if not correlation_id:
             correlation_id = str(uuid.uuid4())
         
+        # Ensure correlation_id is a string
+        if isinstance(correlation_id, uuid.UUID):
+            correlation_id = str(correlation_id)
+        
         # Create the message structure
         message = {
             'type': command_type,
@@ -88,6 +100,7 @@ class KafkaClient:
         
         # Try to publish
         try:
+            # Using our producer with the UUIDEncoder
             self.producer.send(topic, message)
             self.producer.flush()  # Ensure message is sent
             logger.info(f"Published command {command_type} to {topic} with correlation_id {correlation_id}")

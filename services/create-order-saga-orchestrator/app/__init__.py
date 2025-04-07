@@ -60,7 +60,10 @@ def create_app():
     
     # Register blueprints
     from app.api.routes import saga_bp
+    from app.api.timer_routes import timer_bp
+    
     app.register_blueprint(saga_bp)
+    app.register_blueprint(timer_bp)
     
     @app.route('/health')
     def health_check():
