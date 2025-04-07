@@ -1,93 +1,229 @@
 import { useState, useEffect } from 'react';
-import { Clock, MapPin, Package, History, Loader2, MessageSquare } from 'lucide-react';
+import { Clock, MapPin, Package, History, Loader2 } from 'lucide-react'; // Removed MessageSquare
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { getActiveOrders, getCompletedOrders, updateOrderStatus, confirmDelivery } from '@/lib/api';
-import { useUser } from '@/lib/hooks/use-user';
-import { OrderLogs } from '@/components/order/order-logs';
-import type { Order, OrderStatus } from '@/lib/types';
+import { useAuth } from '@clerk/clerk-react'; // Use Clerk auth
+import { OrderLogs } from '@/components/order/order-logs'; // Assuming this component exists and works
+
+// Define BackendOrder type matching the order service response
+interface BackendOrder {
+  orderId: string;
+  custId: string;
+  runnerId: string | null;
+  orderDescription: string; // JSON string of items
+  foodFee: number;
+  deliveryFee: number;
+  deliveryLocation: string;
+  orderStatus: OrderStatusType; // Use the enum type below
+  sagaId: string | null;
+  createdAt: string; // ISO string
+  updatedAt: string; // ISO string
+  completedAt: string | null; // ISO string or null
+  // Add other fields if needed based on display requirements
+  instructions?: string;
+}
+
+// Define structure for parsed items from orderDescription
+interface ParsedItem {
+    name: string;
+    quantity: number;
+    price?: number;
+}
+
+// Backend OrderStatus Enum Values
+const OrderStatusEnum = {
+  PENDING: "PENDING",
+  CREATED: "CREATED",
+  ACCEPTED: "ACCEPTED",
+  PLACED: "PLACED", // Runner has placed the order at the store
+  ON_THE_WAY: "ON_THE_WAY", // Runner has picked up the order
+  DELIVERED: "DELIVERED", // Runner has delivered to customer (pending completion)
+  COMPLETED: "COMPLETED", // Saga completed, payment released
+  CANCELLED: "CANCELLED",
+} as const;
+
+type OrderStatusType = keyof typeof OrderStatusEnum;
+
+// Define the flow for runner status updates
+const runnerStatusFlow: Partial<Record<OrderStatusType, OrderStatusType>> = {
+  ACCEPTED: 'PLACED',
+  PLACED: 'ON_THE_WAY',
+  ON_THE_WAY: 'DELIVERED',
+  // DELIVERED triggers the complete saga, not a direct status update
+};
 
 export function ActiveOrdersPage() {
-  const { id: runnerId } = useUser();
+  const { userId: runnerId, getToken } = useAuth();
   const { toast } = useToast();
-  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
-  const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
+  const [allOrders, setAllOrders] = useState<BackendOrder[]>([]);
   const [showCompleted, setShowCompleted] = useState(false);
-  const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null); // Track which order is being updated/completed
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      if (!runnerId) return;
-      const [active, completed] = await Promise.all([
-        getActiveOrders(runnerId),
-        getCompletedOrders(runnerId)
-      ]);
-      setActiveOrders(active);
-      setCompletedOrders(completed);
-    };
-
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 5000);
-    return () => clearInterval(interval);
-  }, [runnerId]);
-
-  const handleUpdateStatus = async (orderId: string, newStatus: OrderStatus) => {
+  const fetchOrders = async () => {
     if (!runnerId) return;
-    setIsUpdating(orderId);
-
+    setIsLoading(true);
+    setError(null);
     try {
-      if (newStatus === 'delivered') {
-        await confirmDelivery(orderId, runnerId, 'runner');
-        toast({
-          title: "Delivery Confirmed",
-          description: "Waiting for customer to confirm delivery.",
-        });
-      } else {
-        await updateOrderStatus(orderId, newStatus);
-        toast({
-          title: "Order Updated",
-          description: `Order status updated to ${newStatus.replace('_', ' ')}`,
-        });
-      }
-
-      // Refresh orders
-      const [active, completed] = await Promise.all([
-        getActiveOrders(runnerId),
-        getCompletedOrders(runnerId)
-      ]);
-      setActiveOrders(active);
-      setCompletedOrders(completed);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update order status",
-        variant: "destructive"
+      const token = await getToken();
+      const response = await fetch(`http://localhost:3002/orders?runnerId=${runnerId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch runner orders: ${response.statusText}`);
+      }
+      const data = await response.json();
+      // Sort all orders by creation date, newest first
+      const sortedOrders = (data.items || []).sort((a: BackendOrder, b: BackendOrder) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setAllOrders(sortedOrders);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An error occurred while fetching orders.';
+      setError(message);
+      console.error('Error fetching orders:', err);
     } finally {
-      setIsUpdating(null);
+      setIsLoading(false);
     }
   };
 
-  const getNextStatus = (currentStatus: OrderStatus): OrderStatus | null => {
-    const statusFlow = {
-      'runner_assigned': 'order_placed',
-      'order_placed': 'picked_up',
-      'picked_up': 'delivered'
-    } as const;
-    return statusFlow[currentStatus as keyof typeof statusFlow] || null;
+  useEffect(() => {
+    fetchOrders();
+    // Optional: Add polling or switch to WebSocket/SSE
+    // const interval = setInterval(fetchOrders, 10000);
+    // return () => clearInterval(interval);
+  }, [runnerId, getToken]);
+
+  const handleUpdateStatus = async (order: BackendOrder) => {
+    if (!runnerId) return;
+
+    const currentStatus = order.orderStatus;
+    const nextStatus = runnerStatusFlow[currentStatus];
+
+    if (!nextStatus) {
+      toast({ title: "Info", description: "No further status update available for this order.", variant: "default" });
+      return;
+    }
+
+    setUpdatingOrderId(order.orderId);
+    try {
+      const token = await getToken();
+      // Call Order Service to update status directly
+      const response = await fetch('http://localhost:3002/updateOrderStatus', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ orderId: order.orderId, status: nextStatus })
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || `Failed to update status to ${nextStatus}`);
+      }
+
+      toast({
+        title: "Order Updated",
+        description: `Order status updated to ${nextStatus.replace('_', ' ')}`,
+      });
+      // Refresh local state optimistically or re-fetch
+      setAllOrders(prevOrders =>
+        prevOrders.map(o =>
+          o.orderId === order.orderId ? { ...o, orderStatus: nextStatus } : o
+        )
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update order status.';
+      toast({ title: "Error", description: message, variant: "destructive" });
+      console.error('Error updating status:', err);
+    } finally {
+      setUpdatingOrderId(null);
+    }
   };
 
-  const getStatusButtonText = (status: OrderStatus): string => {
-    const statusTexts = {
-      'runner_assigned': 'Mark as Order Placed',
-      'order_placed': 'Mark as Order Picked Up',
-      'picked_up': 'Mark as Delivered',
-      'delivered': 'Waiting for Customer'
-    } as const;
-    return statusTexts[status] || 'Update Status';
+  // Function to trigger the Complete Order Saga
+  const handleCompleteOrderSaga = async (order: BackendOrder) => {
+     if (!runnerId) return;
+     setUpdatingOrderId(order.orderId); // Use the same state to show loading
+
+     try {
+        const token = await getToken();
+        // Call the Complete Order Saga Orchestrator
+        const response = await fetch('http://localhost:3103/updateOrderStatus', { // Saga endpoint
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` // Assuming saga needs auth
+            },
+            // Saga API expects order_id and clerk_user_id
+            body: JSON.stringify({ order_id: order.orderId, clerk_user_id: runnerId })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || `Failed to trigger order completion saga.`);
+        }
+
+        toast({
+            title: "Completion Initiated",
+            description: `Order completion process started for order ${order.orderId.substring(0, 8)}...`,
+        });
+        // Optionally update local state to reflect pending completion or re-fetch
+        // For now, we just show the toast and wait for backend updates
+        // Consider disabling the button after successful initiation
+
+     } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to initiate order completion.';
+        toast({ title: "Error", description: message, variant: "destructive" });
+        console.error('Error completing order saga:', err);
+     } finally {
+        setUpdatingOrderId(null);
+     }
   };
 
-  const orders = showCompleted ? completedOrders : activeOrders;
+
+  // Filter orders based on the toggle
+  const activeOrders = allOrders.filter(o => o.orderStatus !== 'COMPLETED' && o.orderStatus !== 'CANCELLED');
+  const completedOrders = allOrders.filter(o => o.orderStatus === 'COMPLETED');
+  const ordersToDisplay = showCompleted ? completedOrders : activeOrders;
+
+  // Helper function to parse orderDescription safely
+  const parseOrderItems = (description: string): ParsedItem[] => {
+    try {
+      const items = JSON.parse(description);
+      return Array.isArray(items) ? items : [];
+    } catch (e) {
+      console.error("Failed to parse order description:", description, e);
+      return [];
+    }
+  };
+
+  // Determine button text and action based on status
+  const getButtonProps = (order: BackendOrder): { text: string; action: () => void; disabled: boolean } => {
+    const currentStatus = order.orderStatus;
+    const nextStatus = runnerStatusFlow[currentStatus];
+    const isLoading = updatingOrderId === order.orderId;
+
+    if (currentStatus === 'DELIVERED') {
+      return {
+        text: 'Trigger Completion',
+        action: () => handleCompleteOrderSaga(order),
+        disabled: isLoading,
+      };
+    } else if (nextStatus) {
+      return {
+        text: `Mark as ${nextStatus.replace('_', ' ')}`,
+        action: () => handleUpdateStatus(order),
+        disabled: isLoading,
+      };
+    } else {
+      return {
+        text: 'No Action Available',
+        action: () => {},
+        disabled: true,
+      };
+    }
+  };
 
   return (
     <div className="container mx-auto p-6">
@@ -114,166 +250,130 @@ export function ActiveOrdersPage() {
           </Button>
         </div>
 
+        {/* Loading and Error States */}
+        {isLoading && <div className="text-center p-8">Loading orders...</div>}
+        {error && <div className="text-center p-8 text-red-600">Error: {error}</div>}
+
         <div className="space-y-4">
-          {orders.map((order) => (
-            <div key={order.id} className="bg-white rounded-lg shadow-sm p-6">
-              {/* Order Header */}
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h3 className="text-lg font-semibold mb-1">Order #{order.order_id}</h3>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <span>Customer:</span>
-                    <span className="font-medium">{order.customer_name}</span>
-                    <a 
-                      href={`https://t.me/${order.customer_telegram}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline flex items-center gap-1"
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                      Contact on Telegram
-                    </a>
-                  </div>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Accepted {new Date(order.created_at!).toLocaleString()}
-                  </p>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-sm ${
-                  order.status === 'picked_up'
-                    ? 'bg-yellow-100 text-yellow-700'
-                    : order.status === 'delivered'
-                    ? 'bg-blue-100 text-blue-700'
-                    : order.status === 'completed'
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 text-gray-700'
-                }`}>
-                  {order.status === 'picked_up' && (
-                    <Clock className="h-4 w-4 inline-block mr-1" />
-                  )}
-                  {order.status.replace('_', ' ').charAt(0).toUpperCase() + 
-                   order.status.replace('_', ' ').slice(1)}
-                </div>
-              </div>
+          {!isLoading && !error && ordersToDisplay.map((order) => {
+            const items = parseOrderItems(order.orderDescription);
+            const total = order.foodFee + order.deliveryFee;
+            const buttonProps = getButtonProps(order);
 
-              {/* Order Summary */}
-              <div className="bg-gray-50 rounded-lg p-6 space-y-6">
-                {/* Store Details */}
-                <div>
-                  <h4 className="font-medium mb-2">Store Details:</h4>
-                  <div className="text-gray-700">
-                    <p>{order.store.name}</p>
-                    <p>Postal Code: {order.store.postalCode}</p>
-                  </div>
-                </div>
-
-                {/* Order Items */}
-                <div>
-                  <h4 className="font-medium mb-2">Order Items:</h4>
-                  <div className="space-y-2">
-                    {order.items.map((item, index) => (
-                      <div key={index} className="flex justify-between">
-                        <span>{item.quantity}x {item.name}</span>
-                        <span className="text-gray-600">${(item.price * item.quantity).toFixed(2)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between pt-2 border-t text-gray-600">
-                      <span>Delivery Fee</span>
-                      <span>${order.deliveryFee.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between pt-2 border-t font-semibold">
-                      <span>Total</span>
-                      <span>${order.total.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Delivery Details */}
-                <div>
-                  <h4 className="font-medium mb-2">Delivery Details:</h4>
-                  <div className="flex items-start text-gray-700">
-                    <MapPin className="h-5 w-5 mr-2 mt-0.5" />
-                    <div>
-                      <p>{order.deliveryDetails.school}</p>
-                      <p>{order.deliveryDetails.building}, Level {order.deliveryDetails.level}</p>
-                      <p>Room {order.deliveryDetails.roomNumber}</p>
-                      {order.deliveryDetails.meetingPoint && (
-                        <p className="mt-1 text-sm">
-                          Meeting point: {order.deliveryDetails.meetingPoint}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Special Instructions */}
-                {order.instructions && (
+            return (
+              <div key={order.orderId} className="bg-white rounded-lg shadow-sm p-6">
+                {/* Order Header */}
+                <div className="flex justify-between items-start mb-6">
                   <div>
-                    <h4 className="font-medium mb-2">Special Instructions:</h4>
-                    <p className="text-gray-700">{order.instructions}</p>
+                    <h3 className="text-lg font-semibold mb-1">Order #{order.orderId.substring(0, 8)}...</h3>
+                    {/* Customer details might need fetching from user service */}
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span>Customer ID:</span>
+                      <span className="font-medium">{order.custId.substring(0, 8)}...</span>
+                      {/* Add contact button if needed, requires fetching customer details */}
+                      {/* <a href={`...`} className="text-blue-600 hover:underline flex items-center gap-1">
+                        <MessageSquare className="h-4 w-4" /> Contact
+                      </a> */}
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Accepted {new Date(order.createdAt).toLocaleString()} {/* Adjust if accept time available */}
+                    </p>
                   </div>
-                )}
-              </div>
+                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      order.orderStatus === 'ON_THE_WAY' ? 'bg-yellow-100 text-yellow-700'
+                    : order.orderStatus === 'DELIVERED' ? 'bg-blue-100 text-blue-700'
+                    : order.orderStatus === 'COMPLETED' ? 'bg-green-100 text-green-700'
+                    : order.orderStatus === 'CANCELLED' ? 'bg-red-100 text-red-700'
+                    : 'bg-gray-100 text-gray-700' // Default/other statuses
+                  }`}>
+                    {order.orderStatus === 'ON_THE_WAY' && (
+                      <Clock className="h-4 w-4 inline-block mr-1" />
+                    )}
+                    {order.orderStatus.replace('_', ' ').charAt(0).toUpperCase() +
+                     order.orderStatus.replace('_', ' ').slice(1).toLowerCase()}
+                  </div>
+                </div>
 
-              {!showCompleted && (
-                <div className="mt-6 pt-6 border-t">
-                  {order.status !== 'completed' && (
+                {/* Order Summary */}
+                <div className="bg-gray-50 rounded-lg p-6 space-y-6">
+                  {/* Store Details - Not available directly, maybe parse from description? */}
+
+                  {/* Order Items */}
+                  <div>
+                    <h4 className="font-medium mb-2">Order Items:</h4>
+                    {items.length > 0 ? (
+                      <div className="space-y-2">
+                        {items.map((item, index) => (
+                          <div key={index} className="flex justify-between">
+                            <span>{item.quantity}x {item.name}</span>
+                            {item.price !== undefined &&
+                              <span className="text-gray-600">${(item.price * item.quantity).toFixed(2)}</span>
+                            }
+                          </div>
+                        ))}
+                        <div className="flex justify-between pt-2 border-t text-gray-600">
+                          <span>Delivery Fee</span>
+                          <span>${order.deliveryFee.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t font-semibold">
+                          <span>Total</span>
+                          <span>${total.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                       <p className="text-gray-500 text-sm">Could not load items.</p>
+                    )}
+                  </div>
+
+                  {/* Delivery Details */}
+                  <div>
+                    <h4 className="font-medium mb-2">Delivery Details:</h4>
+                    <div className="flex items-start text-gray-700">
+                      <MapPin className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />
+                      {/* Display raw location string */}
+                      <p>{order.deliveryLocation}</p>
+                    </div>
+                  </div>
+
+                  {/* Special Instructions - Assuming part of description or not available */}
+                </div>
+
+                {/* Action Button */}
+                {!showCompleted && (
+                  <div className="mt-6 pt-6 border-t">
                     <Button
-                      onClick={() => {
-                        const nextStatus = getNextStatus(order.status);
-                        if (nextStatus) {
-                          handleUpdateStatus(order.order_id, nextStatus);
-                        }
-                      }}
+                      onClick={buttonProps.action}
                       className="w-full"
-                      disabled={!!isUpdating || !getNextStatus(order.status)}
+                      disabled={buttonProps.disabled}
                     >
-                      {isUpdating === order.order_id ? (
+                      {buttonProps.disabled && updatingOrderId === order.orderId ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Updating...
+                          Processing...
                         </>
                       ) : (
-                        getStatusButtonText(order.status)
+                        buttonProps.text
                       )}
                     </Button>
-                  )}
+                  </div>
+                )}
 
-                  {order.status === 'delivered' && (
-                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                      <h5 className="font-medium mb-2">Delivery Confirmation Status:</h5>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Runner:</span>
-                          <span className={order.runner_confirmation === 'confirmed' ? 'text-green-600' : 'text-gray-600'}>
-                            {order.runner_confirmation === 'confirmed' ? '✓ Confirmed' : 'Pending'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Customer:</span>
-                          <span className={order.customer_confirmation === 'confirmed' ? 'text-green-600' : 'text-gray-600'}>
-                            {order.customer_confirmation === 'confirmed' ? '✓ Confirmed' : 'Pending'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                {/* Order Logs (Assuming this component works) */}
+                <OrderLogs orderId={order.orderId} />
+              </div>
+            );
+          })}
 
-              <OrderLogs orderId={order.order_id} />
-            </div>
-          ))}
-
-          {orders.length === 0 && (
+          {!isLoading && !error && ordersToDisplay.length === 0 && (
             <div className="bg-white rounded-lg shadow-sm p-8 text-center">
               <Package className="h-12 w-12 mx-auto mb-4 text-gray-400" />
               <h3 className="text-lg font-medium text-gray-900">
                 {showCompleted ? 'No Completed Orders' : 'No Active Orders'}
               </h3>
               <p className="mt-2 text-gray-600">
-                {showCompleted 
-                  ? 'Complete some deliveries to see them here'
-                  : 'Check the available orders page for new delivery opportunities'
+                {showCompleted
+                  ? 'You haven\'t completed any orders yet.'
+                  : 'You have no active orders.'
                 }
               </p>
             </div>

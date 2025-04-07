@@ -24,15 +24,34 @@ def get_orders():
     try:
         page = request.args.get('page', 1, type=int)
         limit = request.args.get('limit', 10, type=int)
+        status_filter = request.args.get('status', None, type=str) # Get optional status filter
+        runner_id_filter = request.args.get('runnerId', None, type=str) # Get optional runnerId filter
+
+        # Base query
+        query = Order.query
+
+        # Apply status filter if provided
+        if status_filter:
+            try:
+                status_enum = OrderStatus[status_filter.upper()]
+                query = query.filter(Order.order_status == status_enum)
+            except KeyError:
+                # Handle invalid status gracefully, maybe return empty or error
+                return jsonify({'error': f'Invalid status value: {status_filter}'}), 400
         
-        # Get orders with pagination
-        orders = Order.query.paginate(page=page, per_page=limit)
-        
+        # Apply runnerId filter if provided
+        if runner_id_filter:
+            query = query.filter(Order.runner_id == runner_id_filter)
+
+        # Add ordering and pagination
+        orders_paginated = query.order_by(Order.created_at.desc()).paginate(page=page, per_page=limit, error_out=False)
+
         result = {
-            'items': [order.to_dict() for order in orders.items],
-            'total': orders.total,
-            'pages': orders.pages,
+            'items': [order.to_dict() for order in orders_paginated.items],
+            'total': orders_paginated.total, # Use total from paginated object
+            'pages': orders_paginated.pages, # Use pages from paginated object
             'page': page
+            # Removed duplicate/incorrect 'total' and 'pages' keys referencing 'orders'
         }
         
         return jsonify(result), 200
@@ -59,6 +78,31 @@ def get_order_details():
     except Exception as e:
         current_app.logger.error(f"Error getting order {order_id}: {str(e)}")
         return jsonify({'error': 'Failed to retrieve order'}), 500
+
+
+@api.route('/orders/customer/<customer_id>', methods=['GET'])
+def get_customer_orders(customer_id):
+    """Get all orders for a specific customer"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 10, type=int)
+        
+        # Query orders filtering by customer_id and paginate
+        orders_query = Order.query.filter_by(cust_id=customer_id).order_by(Order.created_at.desc())
+        orders_paginated = orders_query.paginate(page=page, per_page=limit, error_out=False) # error_out=False prevents 404 on empty pages
+        
+        result = {
+            'items': [order.to_dict() for order in orders_paginated.items],
+            'total': orders_paginated.total,
+            'pages': orders_paginated.pages,
+            'page': page
+        }
+        
+        return jsonify(result), 200
+    except Exception as e:
+        current_app.logger.error(f"Error getting orders for customer {customer_id}: {str(e)}")
+        return jsonify({'error': 'Failed to retrieve customer orders'}), 500
+
 
 # order.created
 @api.route('/createOrder', methods=['POST'])
