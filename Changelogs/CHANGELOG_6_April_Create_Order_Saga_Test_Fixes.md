@@ -31,7 +31,7 @@ Initiated the saga by sending an HTTP POST request to the Create Order Saga Orch
     *   `campusg-user-service-1`
     *   `campusg-payment-service-1`
     *   `campusg-timer-service-1`
-
+    
 4.  **Poll for Status:** After a few seconds, simulate the UI polling for the final status using the `saga_id` noted in step 2:
     ```bash
     # Replace <saga_id> with the actual ID from the POST response

@@ -321,7 +321,48 @@ def test_create_order_flow(config):
     }
     
     logger.info(f"Initiating order for customer {customer_id}")
-    
+
+    # --- Pre-create user for non-mock tests ---
+    if not config['mock_mode']:
+        logger.info(f"Pre-creating user {customer_id} via User Service API...")
+        user_service_base_url = f"http://{config['host']}:{config['user_service_port']}/api"
+        try:
+            # 1. Simulate Clerk webhook user.created
+            webhook_payload = {
+                "type": "user.created",
+                "data": {
+                    "id": customer_id,
+                    "email_addresses": [{"email_address": f"{customer_id}@example.com", "id": f"idn_{customer_id}", "linked_to": [], "object": "email_address", "verification": None}],
+                    "first_name": "Test",
+                    "last_name": "User",
+                    "phone_numbers": [],
+                    "username": customer_id,
+                    "created_at": int(time.time()),
+                    "updated_at": int(time.time())
+                }
+            }
+            response_webhook = requests.post(f"{user_service_base_url}/webhook/clerk", json=webhook_payload)
+            response_webhook.raise_for_status()
+            logger.info(f"User {customer_id} creation request sent (simulated webhook). Status: {response_webhook.status_code}")
+
+            # 2. Add test payment method
+            payment_payload = {"paymentMethodId": "pm_card_visa"}
+            response_payment = requests.put(f"{user_service_base_url}/user/{customer_id}/payment", json=payment_payload)
+            response_payment.raise_for_status()
+            logger.info(f"Test payment method added for user {customer_id}. Status: {response_payment.status_code}")
+            # Add a small delay to allow DB updates if necessary
+            time.sleep(1)
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to pre-create user {customer_id}: {e}")
+            return False # Cannot proceed if user setup fails
+    # --- End user pre-creation ---
+
+    # Add a longer delay here to ensure User Service DB is settled before saga starts
+    if not config['mock_mode']:
+        logger.info("Waiting 5 seconds after user pre-creation before starting saga...")
+        time.sleep(5)
+
     # In mock mode, we don't actually call the API
     if config['mock_mode']:
         logger.info("MOCK: API call to start saga")
@@ -388,76 +429,34 @@ def test_create_order_flow(config):
             logger.error("Failed to publish order.created event")
             return False
         
-        # Wait for orchestrator to process
-        time.sleep(2)
-        
-        # Verify saga state updated
-        verify_saga_state(config, saga_id, expected_step="GET_USER_DATA")
-        
-        # Verify notification logged
+        # Wait significantly longer for the orchestrator to process order.created
+        # AND for the actual User Service to process the resulting
+        # get_user_payment_info command and publish the user.payment_info_retrieved event.
+        logger.info("Waiting for orchestrator to process order.created and for User Service to publish payment info...")
+        time.sleep(20) # Increased wait time significantly for real User Service event
+
+        # Verify saga state updated - should have moved past AUTHORIZE_PAYMENT to UPDATE_ORDER_STATUS
+        # This happens because the real Payment Service should have processed the command and published payment.authorized
+        logger.info("Verifying saga state after waiting for User Service and Payment Service events...")
+        if not verify_saga_state(config, saga_id, expected_step="UPDATE_ORDER_STATUS"):
+             logger.error("Saga did not reach UPDATE_ORDER_STATUS step after waiting for User and Payment services.")
+             # Check if it failed earlier
+             verify_saga_state(config, saga_id, expected_status="FAILED") # Log final state if failed
+             return False
+
+        # Verify notification logged for order.created (still relevant)
         verify_notification_logged(config, saga_id, 'order.created')
-        
-        # 3. Simulate User Service - user.payment_info_retrieved event
-        logger.info("Simulating User Service retrieving payment info")
-        
-        success = publish_event(
-            producer,
-            config['user_events_topic'],
-            'user.payment_info_retrieved',
-            saga_id,
-            {
-                'payment_info': {
-                    'card_type': 'visa',
-                    'last_four': '4242',
-                    'card_token': 'tok_visa'
-                }
-            },
-            config
-        )
-        
-        if not success:
-            logger.error("Failed to publish user.payment_info_retrieved event")
-            return False
-        
-        # Wait for orchestrator to process
-        time.sleep(2)
-        
-        # Verify saga state updated
-        verify_saga_state(config, saga_id, expected_step="AUTHORIZE_PAYMENT")
-        
-        # Verify notification logged
+        # Verify notification for user.payment_info_retrieved (now that it's real)
         verify_notification_logged(config, saga_id, 'user.payment_info_retrieved')
-        
-        # 4. Simulate Payment Service - payment.authorized event
-        logger.info("Simulating Payment Service authorizing payment")
-        
-        payment_id = f"payment_{int(time.time())}"
-        success = publish_event(
-            producer,
-            config['payment_events_topic'],
-            'payment.authorized',
-            saga_id,
-            {
-                'payment_id': payment_id,
-                'order_id': order_id,
-                'amount': 36.97,  # 2 * 15.99 + 4.99
-                'status': 'AUTHORIZED'
-            },
-            config
-        )
-        
-        if not success:
-            logger.error("Failed to publish payment.authorized event")
-            return False
-        
-        # Wait for orchestrator to process
-        time.sleep(2)
-        
-        # Verify saga state updated
-        verify_saga_state(config, saga_id, expected_step="UPDATE_ORDER_STATUS")
-        
-        # Verify notification logged
+        # Verify notification for payment.authorized (now that it's real)
         verify_notification_logged(config, saga_id, 'payment.authorized')
+
+        # We no longer simulate payment.authorized, the real event should have been processed.
+        # The saga should now be at UPDATE_ORDER_STATUS.
+
+        # Add a small wait here just in case Order Service needs time to process the update_order_status command
+        logger.info("Waiting briefly before simulating order.status_updated...")
+        time.sleep(5)
         
         # 5. Simulate Order Service - order.status_updated event
         logger.info("Simulating Order Service updating order status")
@@ -479,7 +478,7 @@ def test_create_order_flow(config):
             return False
         
         # Wait for orchestrator to process
-        time.sleep(2)
+        time.sleep(10) # Increased wait time for Docker
         
         # Verify saga state updated - should now be at START_TIMER step
         verify_saga_state(config, saga_id, expected_step="START_TIMER")
@@ -510,7 +509,7 @@ def test_create_order_flow(config):
             return False
         
         # Wait for orchestrator to process
-        time.sleep(2)
+        time.sleep(10) # Increased wait time for Docker
         
         # Verify saga state updated - should now be COMPLETED
         verify_saga_state(config, saga_id, expected_status="COMPLETED")
@@ -618,7 +617,7 @@ def test_order_cancellation_flow(config):
             },
             config
         )
-        time.sleep(2)
+        time.sleep(10) # Increased wait time for Docker
         
         # User Service returns payment info
         publish_event(
@@ -626,16 +625,15 @@ def test_order_cancellation_flow(config):
             config['user_events_topic'],
             'user.payment_info_retrieved',
             saga_id,
-            {
+            { # Corrected payload structure
                 'payment_info': {
-                    'card_type': 'visa',
-                    'last_four': '4242',
-                    'card_token': 'tok_visa'
+                    'stripeCustomerId': 'cus_test_cancel_docker', # Use a placeholder
+                    'paymentMethodId': 'pm_card_visa'
                 }
             },
             config
         )
-        time.sleep(2)
+        time.sleep(10) # Increased wait time for Docker
         
         # Payment Service authorizes payment
         payment_id = f"payment-cancel-{int(time.time())}"
@@ -652,7 +650,7 @@ def test_order_cancellation_flow(config):
             },
             config
         )
-        time.sleep(2)
+        time.sleep(10) # Increased wait time for Docker
         
         # Verify we're at the right point in the saga
         verify_saga_state(config, saga_id, expected_step="UPDATE_ORDER_STATUS")
@@ -676,7 +674,7 @@ def test_order_cancellation_flow(config):
             },
             config
         )
-        time.sleep(2)
+        time.sleep(10) # Increased wait time for Docker
         
         # Verify notification logged
         verify_notification_logged(config, saga_id, 'order.cancellation_requested')
@@ -695,7 +693,7 @@ def test_order_cancellation_flow(config):
             },
             config
         )
-        time.sleep(2)
+        time.sleep(10) # Increased wait time for Docker
         
         # Verify notification logged
         verify_notification_logged(config, saga_id, 'payment.cancelled')
@@ -713,7 +711,7 @@ def test_order_cancellation_flow(config):
             },
             config
         )
-        time.sleep(2)
+        time.sleep(10) # Increased wait time for Docker
         
         # Verify notification logged
         verify_notification_logged(config, saga_id, 'order.status_updated')
