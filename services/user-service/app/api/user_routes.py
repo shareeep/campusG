@@ -154,6 +154,28 @@ def get_payment_info(clerk_user_id):
         current_app.logger.error(f"Error retrieving payment info for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to retrieve payment information: {str(e)}"}), 500
 
+@api.route('/user/<clerk_user_id>/connect-account', methods=['GET'])
+def get_connect_account(clerk_user_id):
+    """
+    Get a user's Stripe Connect account ID
+    
+    This endpoint returns just the user's Stripe Connect account ID.
+    """
+    try:
+        user = User.query.get(clerk_user_id)
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+            
+        return jsonify({
+            'success': True,
+            'stripe_connect_account_id': user.stripe_connect_account_id
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving Connect account ID for user {clerk_user_id}: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to retrieve Connect account ID: {str(e)}"}), 500
+
 @api.route('/user/<clerk_user_id>/payment', methods=['PUT'])
 def update_payment_info(clerk_user_id):
     """
