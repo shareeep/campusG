@@ -45,25 +45,25 @@ async def get_user_payment_info(clerk_user_id: str) -> dict:
 @activity.defn
 async def release_funds(payment_info: dict) -> bool:
 # async def release_funds(clerk_user_id: str) -> bool:
-    # try:
-    #     url = "http://localhost:3003/releaseFunds"
-    #     response = requests.post(url, json=payment_info)
-    #     response.raise_for_status()
+    try:
+        url = "http://localhost:3003/payment/{}/release"
+        response = requests.post(url, json=payment_info)
+        response.raise_for_status()
         print(f"Funds released for {payment_info}")
         return True
-    # except Exception as e:
-    #     print(f"Failed to release funds: {e}")
-    #     return False
+    except Exception as e:
+        print(f"Failed to release funds: {e}")
+        return False
 
 # Rollback Activity: Revert Released Funds
 @activity.defn
 async def rollback_release_funds(payment_info: dict) -> bool:
-    # try:
-    #     url = "http://localhost:3003/refundFunds"
-    #     response = requests.post(url, json=payment_info)
-    #     response.raise_for_status()
+    try:
+        url = "http://localhost:3003/payment/{}/revert"
+        response = requests.post(url, json=payment_info)
+        response.raise_for_status()
         print(f"Rollback successful: Funds refunded for {payment_info}")
         return True
-    # except Exception as e:
-    #     print(f"Failed to rollback funds: {e}")
-    #     return False
+    except Exception as e:
+        print(f"Failed to rollback funds: {e}")
+        return False

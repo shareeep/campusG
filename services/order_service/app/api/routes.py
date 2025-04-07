@@ -488,20 +488,5 @@ def test_create_order():
         current_app.logger.error(f"Error creating order: {str(e)}")
         return jsonify({'success': False, 'error': f"Failed to create order: {str(e)}"}), 500
 
-
-# Helper functions for calculating amounts
-def calculate_food_total(food_items):
-    """Calculate the food total"""
-    total = Decimal('0.00')
-    for item in food_items:
-        price = Decimal(str(item.get('price', 0)))
-        quantity = Decimal(str(item.get('quantity', 0)))
-        total += price * quantity
-    return total
-
-def calculate_delivery_fee(location):
-    """Calculate delivery fee based on location"""
-    # In a real implementation, this would use distance or zones
-    return Decimal('3.99')
 # Removed helper functions calculate_food_total and calculate_delivery_fee
 # as they are now imported from app.utils.calculations
