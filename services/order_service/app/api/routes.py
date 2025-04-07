@@ -22,19 +22,24 @@ def health_check():
 def get_orders():
     """Get all orders"""
     try:
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
-        
-        # Get orders with pagination
-        orders = Order.query.paginate(page=page, per_page=limit)
-        
-        result = {
-            'items': [order.to_dict() for order in orders.items],
-            'total': orders.total,
-            'pages': orders.pages,
-            'page': page
-        }
-        
+        # Remove pagination logic:
+        # page = request.args.get('page', 1, type=int)
+        # limit = request.args.get('limit', 10, type=int)
+
+        # Get all orders without pagination
+        # orders = Order.query.paginate(page=page, per_page=limit) # Old line
+        orders = Order.query.all() # New line: Fetch all orders
+
+        # Update the result structure to just return the list of items
+        # result = {
+        #     'items': [order.to_dict() for order in orders.items],
+        #     'total': orders.total,
+        #     'pages': orders.pages,
+        #     'page': page
+        # } # Old result structure
+
+        result = [order.to_dict() for order in orders] # New result: simple list
+
         return jsonify(result), 200
     except Exception as e:
         current_app.logger.error(f"Error getting orders: {str(e)}")
