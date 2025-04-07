@@ -2,6 +2,7 @@ from temporalio.client import Client
 from flask import Flask, request, jsonify
 import asyncio
 from workflows import CompleteOrderWorkflow
+from datetime import timedelta
 
 app = Flask(__name__)
 
@@ -13,7 +14,8 @@ async def trigger_workflow(input_data):
         CompleteOrderWorkflow.run,  # Note: Refer to the actual workflow function here
         input_data,  # This should be passed as a positional argument, not a keyword argument
         id="order-workflow-001",
-        task_queue="complete-order-queue"
+        task_queue="complete-order-queue",
+        execution_timeout=timedelta(seconds=5)
     )
     return result.id
 

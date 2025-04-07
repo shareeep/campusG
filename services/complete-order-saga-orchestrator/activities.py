@@ -1,4 +1,6 @@
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
+from datetime import timedelta
 import requests
 
 # Activity to update order status in Order Service
@@ -9,15 +11,19 @@ async def update_order_status(order_id: str, status: str) -> bool:
         response = requests.post(url, json={"orderId": order_id, "status": status})
         response.raise_for_status()
         print(f"Order {order_id} status updated to {status}")
-        return True
+        return False
     except Exception as e:
         print(f"Failed to update order {order_id} to {status}: {e}")
-        return False
+        attempt = activity.info().attempt
+        raise ApplicationError(
+            f"Error encountered on attempt {attempt}",
+            next_retry_delay=timedelta(seconds=3 * attempt),
+        ) from e
     
 @activity.defn
 async def rollback_update_order_status(order_id: str, status: str) -> bool:
     try:
-        url = f"http://localhost:3002/api/updateOrderStatus"
+        url = f"http://localhost:3002/updateOrderStatus"
         response = requests.post(url, json={"orderId": order_id, "status": status})
         response.raise_for_status()
         print(f"Rollback successful: Order {order_id} status reverted to {status}")
@@ -64,7 +70,7 @@ async def get_payment_status(order_id: str) -> str:
 @activity.defn
 async def release_funds(payment_id: str, clerk_user_id: str, stripe_connect_id: str) -> bool:
     try:
-        url = "http://localhost:3003/payment/{payment_id}/release"
+        url = f"http://localhost:3003/payment/{payment_id}/release"
         response = requests.post(url, json={"runner_id": clerk_user_id, "runner_connect_account_id": stripe_connect_id})
         response.raise_for_status()
         print(f"Funds released for {payment_id}")
@@ -77,7 +83,7 @@ async def release_funds(payment_id: str, clerk_user_id: str, stripe_connect_id: 
 @activity.defn
 async def rollback_release_funds(payment_id: str) -> bool:
     try:
-        url = "http://localhost:3003/payment/{payment_id}/revert"
+        url = f"http://localhost:3003/payment/{payment_id}/revert"
         response = requests.post(url)
         response.raise_for_status()
         print(f"Rollback successful: Funds refunded for {payment_id}")
