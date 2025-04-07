@@ -258,6 +258,17 @@ def publish_order_status_changed_event(kafka_service, order_id, old_status, new_
         correlation_id
     )
 
+def publish_order_cancelled_event(kafka_service, order_id, reason, correlation_id=None):
+    """Publish an order.cancelled event."""
+    return kafka_service.publish_event(
+        'order.cancelled', # New event type
+        {
+            'order_id': order_id,
+            'reason': reason
+        },
+        correlation_id
+    )
+
 # --- Initialization ---
 
 # Global instance (using singleton pattern via __new__)
@@ -279,7 +290,8 @@ def init_kafka(app):
     # Example: register_create_order_handler(kafka_client)
     # Register command handlers
     kafka_client.register_command_handler('create_order', handle_create_order_command)
-    kafka_client.register_command_handler('update_order_status', handle_update_order_status_command) # Register new handler
+    kafka_client.register_command_handler('update_order_status', handle_update_order_status_command)
+    kafka_client.register_command_handler('cancel_order', handle_cancel_order_command) # Register cancellation handler
 
     if kafka_client.consumer:
         kafka_client.start_consuming()
@@ -336,6 +348,7 @@ def handle_create_order_command(correlation_id, payload):
 
         # Save to database
         db.session.add(order)
+
         db.session.commit()
         logger.info(f"Order {order.order_id} created successfully in DB for saga {correlation_id}")
 
@@ -361,6 +374,7 @@ def handle_create_order_command(correlation_id, payload):
         # Optionally publish a failure event
         # kafka_client.publish_event('order.creation_failed', {'error': str(e)}, correlation_id)
 
+    # REMOVE THE ERRONEOUS RAISE EXCEPTION LINE THAT WAS HERE
 
 def handle_update_order_status_command(correlation_id, payload):
     """Handles the 'update_order_status' command received from Kafka."""
@@ -391,6 +405,10 @@ def handle_update_order_status_command(correlation_id, payload):
             # Optionally publish failure event
             # kafka_client.publish_event('order.status_update_failed', {'error': 'Invalid status'}, correlation_id)
             return
+        
+        # --- TEMPORARY FOR TESTING SCENARIO 1b COMMENT TO TEST STATUS UPDATE FAILURE---
+        # raise Exception("Simulating status update failure") 
+        # --- REMOVE AFTER TESTING ---
 
         order.order_status = new_status
         order.updated_at = datetime.now(timezone.utc)
@@ -418,6 +436,64 @@ def handle_update_order_status_command(correlation_id, payload):
 
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Error handling update_order_status command for saga {correlation_id}: {e}", exc_info=True)
+        error_message = f"Error handling update_order_status command for saga {correlation_id}: {str(e)}"
+        logger.error(error_message, exc_info=True)
+        # Publish failure event so orchestrator can compensate
+        failure_payload = {
+            'order_id': payload.get('order_id'), # Include order_id if available in original payload
+            'error': str(e)
+        }
+        kafka_client.publish_event('order.status_update_failed', failure_payload, correlation_id)
+
+
+def handle_cancel_order_command(correlation_id, payload):
+    """Handles the 'cancel_order' command received from Kafka."""
+    logger.info(f"Handling cancel_order command for saga {correlation_id}")
+    try:
+        order_id = payload.get('order_id')
+        reason = payload.get('reason', 'Cancellation requested') # Default reason
+
+        if not order_id:
+            logger.error(f"Missing order_id in cancel_order payload for saga {correlation_id}")
+            # Optionally publish failure event
+            # kafka_client.publish_event('order.cancellation_failed', {'error': 'Missing order_id'}, correlation_id)
+            return
+
+        # Find the order
+        order = Order.query.get(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for cancellation (saga {correlation_id})")
+            # Optionally publish failure event
+            # kafka_client.publish_event('order.cancellation_failed', {'error': 'Order not found'}, correlation_id)
+            return
+
+        # Check if order is already cancelled or completed
+        if order.order_status in [OrderStatus.CANCELLED, OrderStatus.COMPLETED, OrderStatus.DELIVERED]:
+             logger.warning(f"Order {order_id} is already in a final state ({order.order_status.name}) and cannot be cancelled.")
+             # Publish success anyway? Or a specific event? Let's publish success for idempotency.
+             success = publish_order_cancelled_event(kafka_client, order.order_id, f"Already in final state: {order.order_status.name}", correlation_id)
+             return
+
+        # Update status to CANCELLED
+        order.order_status = OrderStatus.CANCELLED
+        order.updated_at = datetime.now(timezone.utc)
+        # Optionally store the reason somewhere if the model supports it
+        db.session.commit()
+        logger.info(f"Order {order_id} status updated to CANCELLED successfully for saga {correlation_id}")
+
+        # Publish the order.cancelled event
+        success = publish_order_cancelled_event(kafka_client, order.order_id, reason, correlation_id)
+
+        if success:
+            logger.info(f"Published order.cancelled event for order {order_id}, saga {correlation_id}")
+        else:
+            logger.error(f"Failed to publish order.cancelled event for order {order_id}, saga {correlation_id}")
+            # Consider compensating action? Unlikely needed for cancellation failure.
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error handling cancel_order command for saga {correlation_id}: {e}", exc_info=True)
         # Optionally publish failure event
-        # kafka_client.publish_event('order.status_update_failed', {'error': str(e)}, correlation_id)
+        # kafka_client.publish_event('order.cancellation_failed', {'error': str(e)}, correlation_id)
+
+    # Ensure the temporary raise Exception for testing Scenario 1b is NOT in handle_update_order_status_command unless actively testing that scenario.

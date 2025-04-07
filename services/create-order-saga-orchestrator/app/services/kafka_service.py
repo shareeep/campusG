@@ -262,6 +262,29 @@ def publish_start_timer_command(kafka_service, timer_data, correlation_id=None):
         correlation_id
     )
 
+# --- Compensation Commands ---
+
+def publish_cancel_order_command(kafka_service, order_id, reason, correlation_id=None):
+    """Publish a command to cancel an order (compensation)."""
+    return kafka_service.publish_command(
+        ORDER_COMMANDS_TOPIC,
+        'cancel_order',
+        {'order_id': order_id, 'reason': reason},
+        correlation_id
+    )
+
+def publish_revert_payment_command(kafka_service, payment_id, reason, correlation_id=None):
+    """Publish a command to revert a payment (compensation)."""
+    # Note: payment_id here refers to the ID stored in the Payment service DB,
+    # which should be available in the saga state after payment authorization.
+    return kafka_service.publish_command(
+        PAYMENT_COMMANDS_TOPIC,
+        'revert_payment',
+        {'payment_id': payment_id, 'reason': reason},
+        correlation_id
+    )
+
+
 def init_kafka(app=None):
     """Initialize the Kafka client
     

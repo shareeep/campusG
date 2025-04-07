@@ -8,8 +8,10 @@ class SagaStatus(enum.Enum):
     STARTED = "STARTED"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
-    COMPENSATING = "COMPENSATING"
-    COMPENSATED = "COMPENSATED"
+    COMPENSATING = "COMPENSATING" # State during rollback/compensation
+    COMPENSATED = "COMPENSATED"   # State after successful rollback/compensation
+    CANCELLING = "CANCELLING"     # State during cancellation process
+    CANCELLED = "CANCELLED"       # State after successful cancellation
 
 class SagaStep(enum.Enum):
     """Steps in the Create Order Saga"""
@@ -27,16 +29,20 @@ class CreateOrderSagaState(db.Model):
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     customer_id = db.Column(db.String(36), nullable=False)
-    order_id = db.Column(db.String(36), nullable=True)  # Will be null until order is created
+    order_id = db.Column(db.String(36), nullable=True)      # Will be null until order is created
+    payment_id = db.Column(db.String(36), nullable=True)    # Will be null until payment is authorized
     status = db.Column(db.Enum(SagaStatus), nullable=False, default=SagaStatus.STARTED)
     current_step = db.Column(db.Enum(SagaStep), nullable=True)
     error = db.Column(db.String(255), nullable=True)
     order_details = db.Column(db.JSON, nullable=False)  # Original order request
     payment_amount = db.Column(db.Float, nullable=True)
+    # Flags to track confirmation of compensation/cancellation actions
+    order_cancelled_confirmed = db.Column(db.Boolean, default=False, nullable=False)
+    payment_reverted_confirmed = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
-    
+
     def update_status(self, status, step=None, error=None):
         """Update the status of this saga state"""
         self.status = status

@@ -123,6 +123,54 @@ def list_sagas():
     return jsonify(result), 200
 
 
+@saga_bp.route('/sagas/<string:saga_id>/cancel', methods=['POST'])
+def cancel_saga(saga_id):
+    """
+    Endpoint to manually request cancellation of a specific saga.
+    """
+    logger = current_app.logger
+    orchestrator = current_app.orchestrator
+    
+    if not orchestrator:
+        logger.error("Orchestrator not initialized, cannot cancel saga.")
+        return jsonify({'error': 'Service unavailable'}), 503
+
+    logger.info(f"Received request to cancel saga {saga_id}")
+
+    try:
+        saga_state = CreateOrderSagaState.query.get(saga_id)
+        if not saga_state:
+            logger.warning(f"Saga {saga_id} not found for cancellation request.")
+            return jsonify({'error': 'Saga not found'}), 404
+
+        # Check if saga is in a state where manual cancellation might be attempted.
+        # Allow attempts if STARTED, COMPENSATING, or COMPLETED (as the underlying order might still be cancellable).
+        # Prevent attempts if already CANCELLING, CANCELLED, FAILED, or COMPENSATED.
+        allowed_states_for_attempt = [SagaStatus.STARTED, SagaStatus.COMPENSATING, SagaStatus.COMPLETED]
+        if saga_state.status not in allowed_states_for_attempt:
+             logger.warning(f"Cannot initiate cancellation for saga {saga_id} in state {saga_state.status.name}")
+             # Return 409 Conflict as the saga is in a final or already processing cancellation state.
+             return jsonify({'error': f'Saga cannot be cancelled in its current state: {saga_state.status.name}'}), 409
+
+        # Initiate cancellation via the orchestrator's internal method
+        # Use a specific reason for manual cancellation
+        success = orchestrator._initiate_cancellation(saga_state, reason="Manual cancellation requested by user")
+
+        if success:
+            logger.info(f"Cancellation initiated successfully for saga {saga_id}")
+            # Return 202 Accepted as cancellation is asynchronous
+            return jsonify({'message': 'Saga cancellation initiated'}), 202
+        else:
+            # _initiate_cancellation logs the specific error
+            logger.error(f"Failed to initiate cancellation for saga {saga_id}")
+            # Return 500 as it indicates an internal issue during cancellation command publishing
+            return jsonify({'error': 'Failed to initiate saga cancellation'}), 500
+
+    except Exception as e:
+        logger.error(f"Unexpected error during saga cancellation request for {saga_id}: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 def calculate_total(order_details):
     """Calculate the total amount for the order"""
     food_total = calculate_food_total(order_details.get('foodItems', []))

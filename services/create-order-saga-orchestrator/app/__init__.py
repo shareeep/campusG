@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 import os
 import logging
+import atexit # Import atexit for shutdown hook
 
 # Configure logging
 logging.basicConfig(
@@ -69,5 +70,26 @@ def create_app():
     def health_check():
         # Disable request logging for health checks to reduce log spam
         return {'status': 'healthy'}, 200
-    
+
+    # Start the scheduler after app initialization
+    if app.orchestrator:
+        try:
+            # Start polling every 60 seconds (adjust interval as needed)
+            # Pass the 'app' instance to the scheduler start function
+            app.orchestrator.start_scheduler(app, interval_seconds=60)
+            
+            # Register scheduler shutdown hook
+            def shutdown_scheduler():
+                app.logger.info("Flask app shutting down, stopping scheduler...")
+                if app.orchestrator:
+                    app.orchestrator.stop_scheduler()
+            
+            atexit.register(shutdown_scheduler)
+            app.logger.info("Registered scheduler shutdown hook.")
+            
+        except Exception as e:
+            app.logger.error(f"Failed to start or register scheduler: {str(e)}", exc_info=True)
+    else:
+        app.logger.warning("Orchestrator not available, scheduler not started.")
+
     return app
