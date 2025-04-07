@@ -385,28 +385,106 @@ services:
   complete-order-saga-orchestrator:
     build:
       context: ./services/complete-order-saga-orchestrator
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@complete-order-saga-db:5432/complete_order_saga_db
-      - USER_SERVICE_URL=http://user-service:3000
-      - ORDER_SERVICE_URL=http://order-service:3000
-      - PAYMENT_SERVICE_URL=http://payment-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
-      - FLASK_APP=run.py
-      - FLASK_DEBUG=0  # Use this instead of FLASK_ENV=production
-    depends_on:
-      complete-order-saga-db:
-        condition: service_healthy
-      user-service:
-        condition: service_started
-      order-service:
-        condition: service_started
-      payment-service:
-        condition: service_started
-      notification-service:
-        condition: service_started
+      dockerfile: Dockerfile
     ports:
-      - "3103:3000"
+      - "3103:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - user-service:
+        condition: service_started
+      - order-service:
+        condition: service_started
+      - payment-service:
+        condition: service_started
+      - notification-service:
+        condition: service_started
 
+#   complete-order-saga-orchestrator:
+#     build:
+#       context: ./services/complete-order-saga-orchestrator
+#     environment:
+#       - DATABASE_URL=postgresql://postgres:postgres@complete-order-saga-db:5432/complete_order_saga_db
+#       - USER_SERVICE_URL=http://user-service:3000
+#       - ORDER_SERVICE_URL=http://order-service:3000
+#       - PAYMENT_SERVICE_URL=http://payment-service:3000
+#       - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+#       - TEMPORAL_HOST=temporal:7233  # NEW: Temporal Server URL
+#       - FLASK_APP=run.py
+#       - FLASK_DEBUG=0  # Use this instead of FLASK_ENV=production
+#     depends_on:
+#       complete-order-saga-db:
+#         condition: service_healthy
+#       user-service:
+#         condition: service_started
+#       order-service:
+#         condition: service_started
+#       payment-service:
+#         condition: service_started
+#       notification-service:
+#         condition: service_started
+#       # temporal:
+#       #   condition: service_healthy  # NEW: Depend on Temporal
+#     networks:
+#       - temporal-network
+#     ports:
+#       - "3103:3000"
+# networks:
+#   temporal-network:
+#     external: true  #
+
+  # temporal:
+  #   image: temporalio/auto-setup:latest
+  #   environment:
+  #     - DB=postgres12                   # Correcting the DB type
+  #     - POSTGRES_USER=temporal
+  #     - POSTGRES_PASSWORD=temporal
+  #     - POSTGRES_SEEDS=temporal-postgres:5432  # This should be 5432 internally, NOT 5433
+  #     - POSTGRES_DB=temporal            # Make sure the database name is specified
+  #     - TEMPORAL_CLI_ADDRESS=temporal:7233
+  #   depends_on:
+  #     temporal-postgres:
+  #       condition: service_healthy
+  #   ports:
+  #     - "7233:7233"
+
+  # temporal-worker:
+  #   build:
+  #     context: ./services/temporal-worker
+  #   environment:
+  #     - TEMPORAL_HOST=temporal:7233
+  #   depends_on:
+  #     temporal:
+  #       condition: service_healthy
+  #   ports:
+  #     - "3104:3000"
+
+  # temporal-ui:
+  #   image: temporalio/ui:latest
+  #   environment:
+  #     - TEMPORAL_ADDRESS=temporal:7233
+  #   ports:
+  #     - "8233:8233"
+  #   depends_on:
+  #     temporal:
+  #       condition: service_healthy
+
+  # temporal-postgres:
+  #   image: postgres:12
+  #   environment:
+  #     POSTGRES_USER: temporal
+  #     POSTGRES_PASSWORD: temporal
+  #     POSTGRES_DB: temporal
+  #   ports:
+  #     - "5443:5432"
+  #   volumes:
+  #     - temporal_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD", "pg_isready", "-U", "temporal"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+    
   # # Frontend
   # frontend:
   #   build:
@@ -431,3 +509,4 @@ volumes:
   create_order_saga_db_data:
   accept_order_saga_db_data:
   complete_order_saga_db_data:
+  temporal_data:

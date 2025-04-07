@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 from decimal import Decimal
 
+
 api = Blueprint('api', __name__)
 
 @api.route('/health', methods=['GET'])
@@ -437,6 +438,53 @@ def complete_order():
         db.session.rollback()
         current_app.logger.error(f"Error completing order: {str(e)}", exc_info=True)
         return jsonify({'error': f"Failed to complete order: {str(e)}"}), 500
+
+@api.route('/testCreateOrder', methods=['POST'])
+def test_create_order():
+    """Create a new order - simple CRUD without saga orchestration"""
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        customer_id = data.get('customer_id')
+        order_details = data.get('order_details')
+        
+        if not customer_id or not order_details:
+            return jsonify({'error': 'Missing required fields: customer_id or order_details'}), 400
+        
+        # Calculate amounts
+        food_items = order_details.get('foodItems', [])
+        delivery_location = order_details.get('deliveryLocation', '')
+        
+        food_fee = calculate_food_total(food_items)
+        delivery_fee = calculate_delivery_fee(delivery_location)
+        
+        # Create a new order
+        order = Order(
+            order_id=str(uuid.uuid4()),
+            cust_id=customer_id,
+            order_description=json.dumps(food_items),
+            food_fee=food_fee,
+            delivery_fee=delivery_fee,
+            delivery_location=delivery_location,
+            order_status=OrderStatus.PENDING
+        )
+        
+        # Save to database
+        db.session.add(order)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'order_id': order.order_id,
+            'message': 'Order created successfully'
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error creating order: {str(e)}")
+        return jsonify({'success': False, 'error': f"Failed to create order: {str(e)}"}), 500
 
 
 # Helper functions for calculating amounts

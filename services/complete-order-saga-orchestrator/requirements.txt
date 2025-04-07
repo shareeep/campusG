@@ -1,9 +1,30 @@
-Flask==2.2.3
-Flask-SQLAlchemy==3.0.3
-Flask-Migrate==4.0.4
-psycopg2-binary==2.9.7
-requests==2.28.2
-python-dotenv==1.0.0
-confluent-kafka==2.1.1
-Werkzeug==2.2.3
-kafka-python==2.0.2
+# Flask dependencies
+Flask==2.0.3
+Werkzeug==2.0.3
+Flask-Cors==3.0.10  # Optional, if you need to handle CORS
+
+# Temporal dependencies
+temporalio==1.0.0
+
+# Kafka dependencies
+kafka-python==2.0.2  # Python client for Kafka
+
+# Asyncio (required by Temporal)
+asyncio==3.4.3
+
+# Logging (for better debugging)
+loguru==0.6.0  # Optional, but highly recommended for logging
+
+# Testing dependencies
+pytest==7.2.0
+pytest-asyncio==0.20.2
+
+# Optional - for environment variable management
+python-dotenv==0.21.0
+
+requests==2.26.0
+
+Flask-SQLAlchemy==2.5.1
+psycopg2-binary==2.9.3
+SQLAlchemy==1.4.22
+

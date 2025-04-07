@@ -29,6 +29,74 @@ def health_check():
     """Basic health check endpoint"""
     return jsonify({'status': 'healthy'}), 200
 
+@api.route('/user/temp', methods=['POST'])
+def create_temp_user():
+    """
+    Create a temporary user
+    
+    Request body should contain:
+    {
+        "email": "temp_user@example.com",
+        "first_name": "Temp",
+        "last_name": "User"
+    }
+    """
+    try:
+        data = request.json
+        
+        if not data or 'email' not in data:
+            return jsonify({'success': False, 'message': 'Email is required'}), 400
+        
+        email = data['email']
+        first_name = data.get('first_name', 'Temp')
+        last_name = data.get('last_name', 'User')
+        phone_number = data.get('phone_number', None)
+        username = data.get('username', None)
+        user_stripe_card = data.get('user_stripe_card', None)
+        stripe_customer_id = data.get('stripe_customer_id', None)
+        
+        # Generate a unique Clerk user ID for the temporary user
+        temp_clerk_user_id = f"temp_{uuid.uuid4().hex}"
+        
+        # Create the temporary user
+        temp_user = User(
+            clerk_user_id=temp_clerk_user_id,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            phone_number=phone_number,
+            username=username,
+            user_stripe_card=user_stripe_card,
+            stripe_customer_id=stripe_customer_id,
+            customer_rating=5.0,
+            runner_rating=5.0,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+        
+        db.session.add(temp_user)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Temporary user created successfully',
+            'user': {
+                'clerk_user_id': temp_clerk_user_id,
+                'email': email,
+                'first_name': first_name,
+                'last_name': last_name
+            }
+        }), 201
+        
+    except IntegrityError as ie:
+        db.session.rollback()
+        current_app.logger.error(f"Integrity error creating temporary user: {str(ie)}")
+        return jsonify({'success': False, 'message': 'Email already exists'}), 400
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error creating temporary user: {str(e)}")
+        return jsonify({'success': False, 'message': f"Failed to create temporary user: {str(e)}"}), 500
+
 @api.route('/user/<clerk_user_id>', methods=['GET'])
 def get_user(clerk_user_id):
     """

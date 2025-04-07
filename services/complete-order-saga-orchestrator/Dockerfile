@@ -1,20 +1,17 @@
-FROM python:3.11-slim
+# Use official Python image
+FROM python:3.9
 
+# Set the working directory
 WORKDIR /app
 
-COPY requirements.txt .
+# Copy all files to the working directory
+COPY . /app
 
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Expose the port that Flask will run on
+EXPOSE 5000
 
-ENV FLASK_APP=run.py
-ENV PYTHONUNBUFFERED=1
-
-EXPOSE 3000
-
-# Make the entrypoint script executable
-RUN chmod +x /app/entrypoint.sh
-
-# Use entrypoint script that runs migrations before starting the app
-CMD ["/app/entrypoint.sh"]
+# Run the Flask application
+CMD ["python", "api_trigger.py"]
