@@ -87,8 +87,8 @@ export function AvailableOrdersPage() {
 
     try {
       const token = await getToken();
-      // Call the accept order saga orchestrator
-      const response = await fetch('http://localhost:3102/acceptOrder', {
+      // Call the accept order saga orchestrator with the correct prefixed path
+      const response = await fetch('http://localhost:3102/saga/accept/acceptOrder', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -127,12 +127,31 @@ export function AvailableOrdersPage() {
     }
   };
 
-   // Helper function to parse orderDescription safely
+  // Define structure for items expected *within* the parsed orderDescription JSON
+  interface RawOrderItem {
+    name?: string;
+    quantity?: string | number;
+    price?: string | number;
+  }
+
+   // Helper function to parse orderDescription safely and ensure price is a number
   const parseOrderItems = (description: string): ParsedItem[] => {
     try {
-      const items = JSON.parse(description);
-      // Basic validation to ensure it's an array
-      return Array.isArray(items) ? items : [];
+      const parsedData = JSON.parse(description);
+      // Ensure it's an array before mapping
+      if (!Array.isArray(parsedData)) {
+         console.error("Parsed order description is not an array:", parsedData);
+         return [];
+      }
+      // Map and ensure price is a number or undefined
+      return parsedData.map((item: RawOrderItem) => ({ // Use RawOrderItem type here
+        name: item.name || 'Unknown Item', // Provide default name
+        quantity: Number(item.quantity) || 0, // Ensure quantity is a number
+        // Explicitly convert price to number, handle non-numeric values
+        price: item.price !== undefined && !isNaN(Number(item.price))
+                 ? Number(item.price)
+                 : undefined,
+      }));
     } catch (e) {
       console.error("Failed to parse order description:", description, e);
       return []; // Return empty array on error

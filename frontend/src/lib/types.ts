@@ -1,4 +1,4 @@
-import { z } from 'zod';
+// Removed unused import { z } from 'zod';
 
 export type UserRole = 'customer' | 'runner';
 
@@ -118,3 +118,26 @@ export interface UserProfile {
   reviews?: Review[];
   created_at: string;
 }
+
+
+// --- API Specific Types ---
+
+// Structure returned by the Order Service /getOrderDetails endpoint
+export interface ApiOrderResponse {
+  orderId: string;
+  custId: string;
+  runnerId: string | null;
+  orderDescription: string; // JSON string of items
+  foodFee: number;
+  deliveryFee: number;
+  deliveryLocation: string;
+  orderStatus: string; // e.g., "CREATED", "ACCEPTED"
+  sagaId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  // Add other potential fields from the actual API response if needed
+  // e.g., instructions?: string; runner_name?: string; etc.
+}
+
+// Add other API-specific response types here if needed

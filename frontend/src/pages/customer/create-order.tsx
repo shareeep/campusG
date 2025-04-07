@@ -1,201 +1,248 @@
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, MapPin, Plus, ShoppingBag } from 'lucide-react';
-import { useAuth } from '@clerk/clerk-react'; // Revert back to useAuth
-import { useUserSync } from '@/providers/UserSyncProvider'; // Also import useUserSync
+import { Loader2, Plus, ShoppingBag, Building, DoorClosed, School, MapPin } from 'lucide-react'; // Added icons
+import { useAuth } from '@clerk/clerk-react';
+import { useUserSync } from '@/providers/UserSyncProvider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import 'leaflet/dist/leaflet.css';
+import 'leaflet/dist/leaflet.css'; // Keep if needed elsewhere, though map is removed
 
 // Define the structure for an item, including price
 interface OrderItem {
   name: string;
   quantity: number;
-  price: number; // Added price field
+  price: number;
 }
 
-// Removed unused OrderFormData interface
+// Define structure for store details
+interface StoreDetails {
+  name: string;
+  postalCode: string;
+}
 
-function LocationPicker({ onLocationSelect }: { onLocationSelect: (lat: number, lng: number) => void }) {
-  // Removed unused 'map' variable assignment
-  useMapEvents({
-    click(e) {
-      onLocationSelect(e.latlng.lat, e.latlng.lng);
-    },
-  });
-
-  return null;
+// Define structure for delivery details
+interface DeliveryDetails {
+  school: string;
+  building: string;
+  level: string;
+  roomNumber: string;
+  meetingPoint?: string; // Optional meeting point
 }
 
 export function CreateOrderPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  // Get auth state from useAuth
   const { userId, getToken, isLoaded, isSignedIn } = useAuth();
-  // Get sync state from useUserSync
   const { syncState } = useUserSync();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState<[number, number] | null>(null);
-  // Update items state to include price, defaulting to 0
+
+  // State for form fields based on order-form.tsx structure
   const [items, setItems] = useState<Array<OrderItem>>([{ name: '', quantity: 1, price: 0 }]);
-
-  // Removed items and unused 'errors' from useForm
-  const { register, handleSubmit } = useForm<{ instructions?: string }>();
-
-  const handleLocationSelect = (lat: number, lng: number) => {
-    setSelectedLocation([lat, lng]);
-  };
+  const [storeDetails, setStoreDetails] = useState<StoreDetails>({ name: '', postalCode: '' });
+  const [deliveryDetails, setDeliveryDetails] = useState<DeliveryDetails>({
+    school: '',
+    building: '',
+    level: '',
+    roomNumber: '',
+    meetingPoint: '',
+  });
+  const [useMeetingPoint, setUseMeetingPoint] = useState(false);
+  const [instructions, setInstructions] = useState('');
+  const [deliveryFee, setDeliveryFee] = useState<number>(5); // Add delivery fee state
 
   const addItem = () => {
-    // Add new item with default price 0
     setItems([...items, { name: '', quantity: 1, price: 0 }]);
   };
 
-  // Update updateItem to handle name, quantity, and price
   const updateItem = (index: number, field: keyof OrderItem, value: string | number) => {
     const newItems = [...items];
-    // Ensure quantity and price are numbers
     const processedValue = (field === 'quantity' || field === 'price') ? Number(value) || 0 : value;
     newItems[index] = { ...newItems[index], [field]: processedValue };
     setItems(newItems);
   };
 
   const removeItem = (index: number) => {
-    // Prevent removing the last item if desired, or handle accordingly
     if (items.length > 1) {
       setItems(items.filter((_, i) => i !== index));
     } else {
-      // Optionally reset the single item instead of removing
        setItems([{ name: '', quantity: 1, price: 0 }]);
        toast({ title: "Cannot remove the last item", variant: "destructive" });
     }
   };
 
-  // Update onSubmit to use component state for items and call the API
-  const onSubmit = async (formData: { instructions?: string }) => {
-    // Log state values at the moment of submission - BEFORE AUTH CHECK
-    console.log("[onSubmit] Before auth check:", { isLoaded, isSignedIn, userId, syncState });
+  const handleStoreChange = (field: keyof StoreDetails, value: string) => {
+    setStoreDetails(prev => ({ ...prev, [field]: value }));
+  };
 
-    // Log state values at the moment of submission - AFTER AUTH CHECK
-    console.log(`[onSubmit] State Check: isLoaded=${isLoaded}, isSignedIn=${isSignedIn}, userId=${userId}, syncState=${syncState}`);
+  const handleDeliveryChange = (field: keyof DeliveryDetails, value: string) => {
+    setDeliveryDetails(prev => ({ ...prev, [field]: value }));
+  };
 
-    // Check Clerk auth state AND backend sync state (Log errors but don't return immediately)
+  const calculateTotal = () => {
+    const itemsTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    // Ensure deliveryFee is treated as a number
+    const fee = Number(deliveryFee) || 0;
+    return itemsTotal + fee;
+  };
+
+  // Updated onSubmit to use new state and structure
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); // Prevent default form submission
+
+    console.log("[onSubmit] State Check:", { isLoaded, isSignedIn, userId, syncState });
+
     if (!isLoaded || !isSignedIn || !userId) {
-       console.error("[onSubmit] Authentication check failed (will still attempt submission):", { isLoaded, isSignedIn, userId });
-       // return; // Removed return to allow submission attempt
+       toast({ title: "Authentication Error", description: "Please ensure you are logged in.", variant: "destructive" });
+       console.error("[onSubmit] Auth check failed:", { isLoaded, isSignedIn, userId });
+       return;
     }
-    // Reinstate syncState check (Log errors but don't return immediately)
     if (syncState !== 'synced') {
-       console.error(`[onSubmit] User sync check failed (will still attempt submission): syncState is ${syncState}`);
-       // return; // Removed return to allow submission attempt
+       toast({ title: "Sync Error", description: `User data not synced (${syncState}). Please wait or refresh.`, variant: "destructive" });
+       console.error(`[onSubmit] Sync check failed: ${syncState}`);
+       return;
     }
 
-    if (!selectedLocation) {
-      toast({
-        title: "Location Required",
-        description: "Please select a delivery location on the map.",
-        variant: "destructive"
-      });
+    // --- Form Validation ---
+    if (!storeDetails.name || !storeDetails.postalCode) {
+      toast({ title: "Store Details Required", description: "Please enter store name and postal code.", variant: "destructive" });
       return;
     }
-
-    if (items.length === 0) {
-      toast({
-        title: "Items Required",
-        description: "Please add at least one item to your order.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Validate items
     const validItems = items.filter(item => item.name.trim() !== '' && item.quantity > 0 && item.price >= 0);
     if (validItems.length === 0) {
-       toast({
-        title: "Valid Items Required",
-        description: "Please add at least one item with a name, quantity, and valid price.",
-        variant: "destructive"
-      });
+       toast({ title: "Valid Items Required", description: "Add at least one item with name, quantity > 0, and price >= 0.", variant: "destructive" });
+       return;
+    }
+    if (!useMeetingPoint && (!deliveryDetails.school || !deliveryDetails.building || !deliveryDetails.level || !deliveryDetails.roomNumber)) {
+      toast({ title: "Delivery Details Required", description: "Please fill in School, Building, Level, and Room Number.", variant: "destructive" });
       return;
     }
+     if (useMeetingPoint && !deliveryDetails.meetingPoint) {
+      toast({ title: "Meeting Point Required", description: "Please specify the alternate meeting point.", variant: "destructive" });
+      return;
+    }
+    // --- End Validation ---
 
-    // Redundant check for userId removed as it's checked above with isSignedIn
 
     setIsSubmitting(true);
 
     try {
-      const token = await getToken(); // Get auth token from useAuth
+      const token = await getToken();
+      // const total = calculateTotal(); // Total amount seems calculated backend-side
+
+      // Calculate food fee
+      const foodFee = validItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      // Construct delivery location string
+      let deliveryLocationString = '';
+      if (useMeetingPoint && deliveryDetails.meetingPoint) {
+        deliveryLocationString = `Meeting Point: ${deliveryDetails.meetingPoint}`;
+      } else {
+        deliveryLocationString = `${deliveryDetails.school}, ${deliveryDetails.building}, Level ${deliveryDetails.level}, Room ${deliveryDetails.roomNumber}`;
+      }
+
+      // Construct payload matching the structure expected by the /orders endpoint (based on curl example)
       const payload = {
-        customer_id: userId, // Use userId from useAuth
+        customer_id: userId,
         order_details: {
-          // Map frontend items state to backend expected format
           foodItems: validItems.map(item => ({
-            name: item.name,
+            item_name: item.name, // Use item_name as per curl example
             quantity: item.quantity,
-            price: item.price.toString(), // Send price as string if backend expects it
+            price: item.price, // Send price as number as per curl example
           })),
-          // Assuming location is just lat/lng for now, adjust if address needed
-          deliveryLocation: {
-            latitude: selectedLocation[0],
-            longitude: selectedLocation[1],
-            // address: "Needs to be captured or derived" // Add address if needed
-          },
-          instructions: formData.instructions || "",
+          deliveryLocation: deliveryLocationString,
+          // Including fees here as they might be expected within order_details
+          foodFee: foodFee,
+          deliveryFee: Number(deliveryFee) || 0,
+          // Include instructions if needed by backend inside order_details
+          // instructions: instructions,
         }
       };
 
-      const response = await fetch('http://localhost:3101/orders', { // Use the correct API endpoint
+      console.log("Submitting Payload:", JSON.stringify(payload, null, 2)); // Log the corrected payload structure
+
+      // Ensure API endpoint and method are correct for Create Order Saga
+      const response = await fetch('http://localhost:3101/orders', { // Verify this endpoint triggers the saga
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // Include auth token
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(payload),
       });
 
       const result = await response.json();
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || `HTTP error! status: ${response.status}`);
+      console.log("API Response:", result); // Log response
+
+      if (!response.ok || !result.success) { // Check for success flag if backend sends one
+        throw new Error(result.error || result.message || `HTTP error! status: ${response.status}`);
       }
 
+      // --- Navigation Logic ---
+      // Always navigate to history page after a delay upon successful initiation
       toast({
         title: "Order Creation Initiated",
-        description: `Saga started successfully (ID: ${result.saga_id}). You will be notified upon completion.`,
+        description: `Your order is being processed (Saga ID: ${result.saga_id}). Redirecting...`,
       });
+      // Add a short delay before navigating to allow backend processing
+      setTimeout(() => {
+        navigate('/customer/history');
+      }, 2000); // 2-second delay
 
-      // Navigate to order history or tracking page after successful initiation
-      navigate('/customer/history'); // Or '/customer/order-tracking/' + result.order_id if available
-
-    } catch (error) { // Use default error type
+    } catch (error) {
       console.error("Order creation failed:", error);
-      // Check if error is an instance of Error before accessing message
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred. Please try again.";
       toast({
         title: "Order Creation Failed",
         description: errorMessage,
         variant: "destructive"
       });
-    } finally {
+      // Ensure isSubmitting is set back to false even after errors
       setIsSubmitting(false);
     }
+    // Note: We intentionally don't set isSubmitting back to false in the finally block here
+    // because we want the button to remain disabled during the setTimeout delay.
+    // It will be re-enabled when the component unmounts or if an error occurs before the timeout.
   };
 
   return (
     <div className="container mx-auto p-6">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Create New Order</h1>
+      <div className="max-w-2xl mx-auto"> {/* Adjusted max-width */}
+        <h1 className="text-2xl font-bold mb-6">Place Your Order</h1> {/* Adjusted heading size */}
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={onSubmit} className="space-y-6"> {/* Use onSubmit directly */}
+
+          {/* Store Details Section */}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h2 className="text-lg font-semibold mb-4">Store Details</h2>
+            <div className="space-y-4">
+              <div>
+                <Label>Store Name</Label>
+                <Input
+                  value={storeDetails.name}
+                  onChange={(e) => handleStoreChange('name', e.target.value)}
+                  placeholder="Enter exact store name"
+                  required
+                />
+              </div>
+              <div>
+                <Label>Postal Code</Label>
+                <Input
+                  value={storeDetails.postalCode}
+                  onChange={(e) => handleStoreChange('postalCode', e.target.value)}
+                  placeholder="Enter store postal code"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Items Section */}
-          <div className="bg-white p-6 rounded-lg shadow-sm">
-            <h2 className="text-xl font-semibold mb-4">Order Items</h2>
-            
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h2 className="text-lg font-semibold mb-4">Order Items</h2>
             <div className="space-y-4">
               {items.map((item, index) => (
                 <div key={index} className="flex gap-4 items-start">
@@ -205,6 +252,7 @@ export function CreateOrderPage() {
                       value={item.name}
                       onChange={(e) => updateItem(index, 'name', e.target.value)}
                       placeholder="Enter item name"
+                      required
                     />
                   </div>
                   <div className="w-24">
@@ -213,23 +261,24 @@ export function CreateOrderPage() {
                       type="number"
                       min="1"
                       value={item.quantity}
-                      onChange={(e) => updateItem(index, 'quantity', e.target.value)} // Pass string value
+                      onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                      required
                     />
                   </div>
-                   {/* Add Price Input */}
-                  <div className="w-24">
+                  <div className="w-32"> {/* Adjusted width */}
                     <Label>Price ($)</Label>
                     <Input
                       type="number"
                       min="0"
-                      step="0.01" // Allow decimals
+                      step="0.01"
                       value={item.price}
-                      onChange={(e) => updateItem(index, 'price', e.target.value)} // Pass string value
+                      onChange={(e) => updateItem(index, 'price', e.target.value)}
+                      required
                     />
                   </div>
                   <Button
                     type="button"
-                    variant="destructive"
+                    variant="secondary" // Changed from destructive
                     size="sm"
                     className="mt-6"
                     onClick={() => removeItem(index)}
@@ -239,96 +288,155 @@ export function CreateOrderPage() {
                 </div>
               ))}
             </div>
-
             <Button
               type="button"
-              variant="outline"
+              variant="ghost" // Changed from outline
               size="sm"
-              className="mt-4"
+              className="mt-4 w-full" // Make Add Item button full width
               onClick={addItem}
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Item
             </Button>
-          </div>
-
-          {/* Delivery Location Section */}
-          <div className="bg-white p-6 rounded-lg shadow-sm">
-            <h2 className="text-xl font-semibold mb-4">Delivery Location</h2>
-            
-            <div className="h-[400px] mb-4 rounded-lg overflow-hidden">
-              <MapContainer
-                center={[51.505, -0.09]}
-                zoom={13}
-                className="h-full w-full"
-              >
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                />
-                <LocationPicker onLocationSelect={handleLocationSelect} />
-                {selectedLocation && (
-                  <Marker position={selectedLocation} />
-                )}
-              </MapContainer>
-            </div>
-
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <MapPin className="h-4 w-4" />
-              {selectedLocation ? (
-                <span>Location selected: {selectedLocation[0].toFixed(6)}, {selectedLocation[1].toFixed(6)}</span>
-              ) : (
-                <span>Click on the map to select delivery location</span>
+             {/* Calculation Display */}
+             {items.length > 0 && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between text-sm">
+                    <span>Items Subtotal:</span>
+                    <span>${items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm mt-2">
+                    <Label>Delivery Fee ($):</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={deliveryFee}
+                      onChange={(e) => setDeliveryFee(parseFloat(e.target.value) || 0)}
+                      className="w-24 text-right"
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-between font-semibold mt-2 pt-2 border-t">
+                    <span>Total:</span>
+                    <span>${calculateTotal().toFixed(2)}</span>
+                  </div>
+                </div>
               )}
+          </div>
+
+          {/* Delivery Details Section (Input Fields) */}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h2 className="text-lg font-semibold mb-4">Delivery Details</h2>
+            <div className="space-y-4">
+              <div>
+                <Label>School/Campus</Label>
+                <div className="relative">
+                  <School className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                  <Input
+                    value={deliveryDetails.school}
+                    onChange={(e) => handleDeliveryChange('school', e.target.value)}
+                    placeholder="Enter school name"
+                    className="pl-10"
+                    required={!useMeetingPoint} // Required only if not using meeting point
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Building Name</Label>
+                <div className="relative">
+                  <Building className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                  <Input
+                    value={deliveryDetails.building}
+                    onChange={(e) => handleDeliveryChange('building', e.target.value)}
+                    placeholder="Enter building name"
+                    className="pl-10"
+                    required={!useMeetingPoint}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Level/Floor</Label>
+                  <Input
+                    value={deliveryDetails.level}
+                    onChange={(e) => handleDeliveryChange('level', e.target.value)}
+                    placeholder="Enter level number"
+                    required={!useMeetingPoint} // Required only if not using meeting point
+                  />
+                </div>
+                <div>
+                  <Label>Room Number</Label>
+                  <div className="relative">
+                    <DoorClosed className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <Input
+                      value={deliveryDetails.roomNumber}
+                      onChange={(e) => handleDeliveryChange('roomNumber', e.target.value)}
+                      placeholder="Enter room number"
+                      className="pl-10"
+                      required={!useMeetingPoint}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="border-t pt-4 mt-4">
+                <label className="flex items-center space-x-2 mb-4">
+                  <input
+                    type="checkbox"
+                    checked={useMeetingPoint}
+                    onChange={(e) => setUseMeetingPoint(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  <span>Specify alternate meeting point</span>
+                </label>
+                {useMeetingPoint && (
+                  <div>
+                    <Label>Meeting Point</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                      <Input
+                        value={deliveryDetails.meetingPoint || ''}
+                        onChange={(e) => handleDeliveryChange('meetingPoint', e.target.value)}
+                        placeholder="e.g., Library Entrance, Canteen Bench"
+                        className="pl-10"
+                        required={useMeetingPoint} // Required only if checkbox is checked
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Instructions Section - Use register from useForm */}
+          {/* Instructions Section */}
           <div className="bg-white p-6 rounded-lg shadow-sm">
-            <h2 className="text-xl font-semibold mb-4">Additional Instructions</h2>
-
+            <h2 className="text-lg font-semibold mb-4">Special Instructions (Optional)</h2>
             <Textarea
-              {...register('instructions')} // Register instructions field
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
               placeholder="Add any special instructions for the runner..."
               className="min-h-[100px]"
             />
           </div>
 
-          {/* Submit Button - Disable while Clerk is loading or submitting (Temporarily ignoring syncState) */}
+          {/* Submit Button */}
           <Button
             type="submit"
             className="w-full"
+            disabled={isSubmitting || !isLoaded || syncState !== 'synced'} // Disable based on auth, sync, and submission state
           >
-             {/* Show detailed loading/sync state */}
-             {/* Keep loading state indicators for visual feedback even if button is clickable */}
              {!isLoaded ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading Auth...
-              </>
-            ) : syncState === 'syncing' ? ( // Explicitly show syncing
-               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Syncing User...
-              </>
-            ) : syncState === 'error' ? ( // Explicitly show error
-               'Sync Error - Try Refresh'
-            ) : syncState === 'idle' ? ( // Explicitly show idle (shouldn't happen long)
-               'Initializing...'
+              <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading Auth... </>
+            ) : syncState !== 'synced' ? (
+               <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Syncing User ({syncState})... </>
             ) : isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating Order...
-              </>
+              <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Order... </>
             ) : (
-              <>
-                <ShoppingBag className="mr-2 h-4 w-4" />
-                Place Order
-              </>
+              <> <ShoppingBag className="mr-2 h-4 w-4" /> Place Order (${calculateTotal().toFixed(2)}) </>
             )}
           </Button>
-        </form>
-      </div>
-    </div>
+      </form>
+    </div> {/* Closing div for max-w-2xl */}
+    </div> // Add missing closing div for container
   );
 }
