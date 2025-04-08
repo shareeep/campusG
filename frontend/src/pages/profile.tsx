@@ -1,7 +1,11 @@
 import { useUser, UserProfile } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { User, Mail, Phone, RefreshCw, CreditCard, Plus } from 'lucide-react';
+import { 
+  User, Mail, Phone, RefreshCw, CreditCard, Plus, 
+  DollarSign, AlertCircle, Loader2, // Removed ArrowDownCircle, ArrowUpCircle
+  ShoppingBag, Bike // Added new icons
+} from 'lucide-react';
 import { useRole } from '@/lib/hooks/use-role';
 import { useUserSync } from '@/providers/UserSyncProvider';
 import { Button } from '@/components/ui/button';
@@ -19,6 +23,17 @@ export function ProfilePage() {
   const [showAddCard, setShowAddCard] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+
+  // State for Payment History
+  interface PaymentHistory {
+    totalSpent: number;
+    totalEarned: number;
+    spentCount: number;
+    earnedCount: number;
+  }
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistory | null>(null);
+  const [historyLoading, setHistoryLoading] = useState<boolean>(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Helper function to extract card details consistently regardless of format
   const getCardDetail = (field: 'last4' | 'brand' | 'expiryMonth' | 'expiryYear') => {
@@ -44,6 +59,48 @@ export function ProfilePage() {
       navigate('/sign-in');
     }
   }, [isLoaded, isSignedIn, navigate]);
+
+  // Fetch Payment History
+  useEffect(() => {
+    if (user?.id) {
+      const fetchHistory = async () => {
+        setHistoryLoading(true);
+        setHistoryError(null);
+        try {
+          // Use the correct port identified from docker-compose.yml
+          const response = await fetch(`http://localhost:3003/history/${user.id}`); 
+          if (!response.ok) {
+             // Try to get error message from backend if available
+              let errorMsg = `HTTP error! status: ${response.status}`;
+            try {
+              const errorData = await response.json();
+              errorMsg = errorData.message || errorData.error || errorMsg;
+            } catch { // Removed unused jsonError variable
+              // Ignore if response is not JSON
+            }
+            throw new Error(errorMsg);
+          }
+          const data: PaymentHistory = await response.json();
+          setPaymentHistory(data);
+        } catch (error: unknown) { // Changed type to unknown
+          console.error("Failed to fetch payment history:", error);
+          // Type check before accessing message property
+          let errorMessage = "Could not load payment history. Please try again later.";
+          if (error instanceof Error) {
+            errorMessage = error.message || errorMessage;
+          }
+          setHistoryError(errorMessage);
+        } finally {
+          setHistoryLoading(false);
+        }
+      };
+      fetchHistory();
+    } else {
+      // If no user ID, set loading to false and potentially an error or default state
+      setHistoryLoading(false);
+      // setHistoryError("User ID not available to fetch history."); // Optional: depends on desired UX
+    }
+  }, [user?.id]); // Dependency array includes user.id
 
   if (!isLoaded || !user) {
     return (
@@ -201,6 +258,81 @@ export function ProfilePage() {
                   <div className="text-sm text-red-700">{cardError}</div>
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* Payment Summary Section */}
+          <div className="mb-4 sm:mb-6">
+            <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Transactions Summary</h2>
+            {historyLoading ? (
+              <div className="flex items-center justify-center p-6 bg-gray-50 rounded-md border">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                <span>Loading payment summary...</span>
+              </div>
+            ) : historyError ? (
+              <div className="flex items-center p-3 bg-red-50 text-red-700 rounded-md border border-red-200">
+                <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+                <span>{historyError}</span>
+              </div>
+            ) : paymentHistory ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {/* Total Spent Card */}
+                <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 flex items-center gap-3">
+                  {/* Changed color to blue */}
+                  <div className="p-2 bg-blue-100 rounded-full"> 
+                    <DollarSign className="h-5 w-5 text-blue-600" /> 
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-500">Total Spent</p>
+                    <p className="text-base sm:text-lg font-semibold">
+                      ${paymentHistory.totalSpent.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+                {/* Total Earned Card */}
+                <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-full">
+                    {/* Changed icon to DollarSign and darker green */}
+                    <DollarSign className="h-5 w-5 text-green-700" /> 
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-500">Total Earnings</p>
+                    <p className="text-base sm:text-lg font-semibold">
+                      ${paymentHistory.totalEarned.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+                {/* Payments Made Card */}
+                <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-full">
+                    {/* Changed icon to ShoppingBag */}
+                    <ShoppingBag className="h-5 w-5 text-blue-600" /> 
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-500">Orders Placed</p>
+                    <p className="text-base sm:text-lg font-semibold">
+                      {paymentHistory.spentCount}
+                    </p>
+                  </div>
+                </div>
+                {/* Payments Received Card */}
+                <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 flex items-center gap-3">
+                  {/* Changed color to green */}
+                  <div className="p-2 bg-green-100 rounded-full"> 
+                    <Bike className="h-5 w-5 text-green-600" /> 
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-500">Orders Fulfilled</p>
+                    <p className="text-base sm:text-lg font-semibold">
+                      {paymentHistory.earnedCount}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+               <div className="text-center p-6 text-gray-500 border rounded-md">
+                 No payment history available.
+               </div>
             )}
           </div>
 

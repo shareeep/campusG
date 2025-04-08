@@ -3,6 +3,7 @@ import os
 import stripe
 
 from flask import Flask
+from flask_cors import CORS # Import CORS
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 
@@ -21,6 +22,11 @@ def create_app(config=None):
     """Create and configure the Flask application."""
     app = Flask(__name__)
     logger.info("Creating Flask app instance...")
+
+    # --- Initialize CORS ---
+    # Allow requests specifically from the frontend development server origin
+    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}}) 
+    logger.info(f"CORS configured for origin: http://localhost:5173")
 
     # --- Configuration Loading ---
     app.config.from_mapping(
