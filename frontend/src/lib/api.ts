@@ -1,15 +1,16 @@
 import { nanoid } from 'nanoid';
 import type { 
-  Order, 
-  OrderStatus, 
-  PaymentStatus, 
-  Transaction, 
+  Order,
+  OrderStatus,
+  // PaymentStatus, // Removed as unused
+  Transaction,
   Wallet,
   Notification,
   OrderLog,
-  UserProfile,
+  UserProfile, // Keep UserProfile import
   UserRole,
-  Review
+  Review,
+  ApiOrderResponse // Import ApiOrderResponse
 } from './types';
 
 // Initialize storage
@@ -49,8 +50,8 @@ async function recalculateUserStats(userId: string, role: UserRole) {
   const reviews = JSON.parse(localStorage.getItem('reviews') || '[]');
   const profiles = JSON.parse(localStorage.getItem('profiles') || '{}');
 
-  const profile = profiles[userId] || await getUserProfile(userId);
-  
+  const profile: UserProfile = profiles[userId] || await getUserProfile(userId); // Add type
+
   let stats = {
     totalOrders: 0,
     totalSpent: undefined as number | undefined,
@@ -60,48 +61,48 @@ async function recalculateUserStats(userId: string, role: UserRole) {
   };
 
   if (role === 'customer') {
-    const customerOrders = orders.filter(o => 
-      o.user_id === userId && 
+    const customerOrders = orders.filter((o: Order) => // Add type
+      o.user_id === userId &&
       o.status === 'completed'
     );
 
-    const customerTransactions = transactions.filter(t => 
-      t.user_id === userId && 
-      t.type === 'payment' && 
+    const customerTransactions = transactions.filter((t: Transaction) => // Add type
+      t.user_id === userId &&
+      t.type === 'payment' &&
       t.status === 'completed'
     );
 
     stats = {
       ...stats,
       totalOrders: customerOrders.length,
-      totalSpent: customerTransactions.reduce((sum, t) => sum + t.amount, 0),
+      totalSpent: customerTransactions.reduce((sum: number, t: Transaction) => sum + t.amount, 0), // Add types
     };
   } else if (role === 'runner') {
-    const runnerOrders = orders.filter(o => 
-      o.runner_id === userId && 
+    const runnerOrders = orders.filter((o: Order) => // Add type
+      o.runner_id === userId &&
       o.status === 'completed'
     );
 
-    const runnerTransactions = transactions.filter(t => 
-      t.user_id === userId && 
-      t.type === 'earning' && 
+    const runnerTransactions = transactions.filter((t: Transaction) => // Add type
+      t.user_id === userId &&
+      t.type === 'earning' &&
       t.status === 'completed'
     );
 
-    const allRunnerOrders = orders.filter(o => o.runner_id === userId);
+    const allRunnerOrders = orders.filter((o: Order) => o.runner_id === userId); // Add type
     const completionRate = allRunnerOrders.length > 0
       ? (runnerOrders.length / allRunnerOrders.length) * 100
       : 0;
 
-    const userReviews = reviews.filter(r => r.runner_id === userId);
+    const userReviews = reviews.filter((r: Review) => r.runner_id === userId); // Add type
     const averageRating = userReviews.length > 0
-      ? userReviews.reduce((sum, r) => sum + r.rating, 0) / userReviews.length
+      ? userReviews.reduce((sum: number, r: Review) => sum + r.rating, 0) / userReviews.length // Add types
       : undefined;
 
     stats = {
       ...stats,
       totalOrders: runnerOrders.length,
-      totalEarned: runnerTransactions.reduce((sum, t) => sum + t.amount, 0),
+      totalEarned: runnerTransactions.reduce((sum: number, t: Transaction) => sum + t.amount, 0), // Add types
       completionRate,
       averageRating
     };
@@ -117,28 +118,28 @@ async function recalculateUserStats(userId: string, role: UserRole) {
 
 async function createOrder(orderData: Omit<Order, 'id' | 'order_id' | 'status' | 'payment_status' | 'customer_confirmation' | 'runner_confirmation'>) {
   initializeStorage();
-  
+
   const id = nanoid();
   const orderId = generateOrderId();
-  
+
   // Get customer profile for name and contact info
   const customerProfile = await getUserProfile(orderData.user_id);
-  
+
   const order: Order = {
+    ...orderData, // Spread orderData first
     id,
     order_id: orderId,
     status: 'created',
     payment_status: 'pending',
     customer_confirmation: 'pending',
     runner_confirmation: 'pending',
-    customer_name: customerProfile.name,
-    customer_telegram: customerProfile.telegram,
+    customer_name: customerProfile.name, // These will overwrite if present in orderData, but needed if not
+    customer_telegram: customerProfile.telegram, // These will overwrite if present in orderData, but needed if not
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    ...orderData
   };
 
-  const orders = JSON.parse(localStorage.getItem('orders') || '[]');
+  const orders: Order[] = JSON.parse(localStorage.getItem('orders') || '[]'); // Add type
   orders.unshift(order); // Add to beginning of array
   localStorage.setItem('orders', JSON.stringify(orders));
 
@@ -156,11 +157,59 @@ async function createOrder(orderData: Omit<Order, 'id' | 'order_id' | 'status' |
   return order;
 }
 
-async function getOrder(orderId: string) {
-  initializeStorage();
-  const orders = JSON.parse(localStorage.getItem('orders') || '[]');
-  return orders.find((order: Order) => order.order_id === orderId) || null;
+// Modified getOrder to fetch from backend API and return the API structure
+async function getOrder(orderId: string, token: string | null): Promise<ApiOrderResponse | null> {
+  // Removed localStorage logic
+  // return orders.find((order: Order) => order.order_id === orderId) || null;
+
+  if (!token) {
+    console.error("GetOrder Error: Authentication token is missing.");
+    // Returning null will keep the loading state in the component
+    return null;
+  }
+
+  if (!orderId) {
+    console.error("GetOrder Error: Order ID is missing.");
+    return null;
+  }
+
+  // --- Fetch from Backend (Order Service) ---
+  // Use the Order Service endpoint: /getOrderDetails?orderId=...
+  const apiUrl = `http://localhost:3002/getOrderDetails?orderId=${orderId}`;
+  console.log(`[api.ts] Fetching order details from Order Service: ${apiUrl}`); // Log the URL being fetched
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json', // Good practice, though not always needed for GET
+      },
+    });
+
+    console.log(`[api.ts] Fetch response status for ${orderId}: ${response.status}`); // Log status
+
+    if (!response.ok) {
+      // Log detailed error information if possible
+      let errorBody = 'Could not read error body';
+      try {
+        errorBody = await response.text(); // Try reading response body for more details
+      } catch { /* Ignore if body cannot be read - removed unused 'e' */ }
+      console.error(`GetOrder Error: Failed to fetch order ${orderId}. Status: ${response.status} ${response.statusText}. Body: ${errorBody}`);
+      return null; // Indicate failure
+    }
+
+    // Expect the backend to return the ApiOrderResponse structure
+    const orderData: ApiOrderResponse = await response.json();
+    console.log(`[api.ts] Successfully fetched order data for ${orderId}:`, orderData);
+    return orderData; // Return the fetched API data structure
+
+  } catch (error) {
+    console.error(`GetOrder Error: Network or parsing error fetching order ${orderId}:`, error);
+    return null; // Indicate failure due to network/parsing issues
+  }
 }
+
 
 async function updateOrderStatus(orderId: string, status: OrderStatus) {
   initializeStorage();
@@ -179,9 +228,9 @@ async function updateOrderStatus(orderId: string, status: OrderStatus) {
 
   // Create notifications based on status
   if (order.user_id) {
-    let title = 'Order Status Updated';
+    const title = 'Order Status Updated'; // Use const
     let message = '';
-    
+
     switch (status) {
       case 'order_placed':
         message = `Your order #${orderId} has been placed by the runner`;
@@ -276,9 +325,9 @@ async function confirmDelivery(orderId: string, userId: string, role: 'customer'
     await releasePayment(orderId);
   } else {
     // Only one party has confirmed
-    const otherRole = role === 'customer' ? 'runner' : 'customer';
+    // const otherRole = role === 'customer' ? 'runner' : 'customer'; // Removed unused variable
     const otherUserId = role === 'customer' ? order.runner_id : order.user_id;
-    
+
     if (otherUserId) {
       createNotification(
         otherUserId,
@@ -291,20 +340,20 @@ async function confirmDelivery(orderId: string, userId: string, role: 'customer'
 }
 
 async function releasePayment(orderId: string) {
-  const orders = JSON.parse(localStorage.getItem('orders') || '[]');
+  const orders: Order[] = JSON.parse(localStorage.getItem('orders') || '[]'); // Add type
   const order = orders.find((o: Order) => o.order_id === orderId);
-  
+
   if (!order || !order.runner_id) return;
 
   // Update payment status
-  const updatedOrders = orders.map((o: Order) => 
+  const updatedOrders = orders.map((o: Order) => // Ensure type is specified here
     o.order_id === orderId ? { ...o, payment_status: 'released' } : o
   );
   localStorage.setItem('orders', JSON.stringify(updatedOrders));
 
   // Complete customer's payment transaction
-  const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-  const updatedTransactions = transactions.map((t: Transaction) => 
+  const transactions: Transaction[] = JSON.parse(localStorage.getItem('transactions') || '[]'); // Add type
+  const updatedTransactions = transactions.map((t: Transaction) =>
     t.order_id === orderId ? { ...t, status: 'completed' } : t
   );
 
@@ -402,8 +451,8 @@ async function getUserOrders(userId: string) {
 
 async function getWallet(userId: string): Promise<Wallet> {
   initializeStorage();
-  const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-  
+  const transactions: Transaction[] = JSON.parse(localStorage.getItem('transactions') || '[]'); // Add type
+
   const userTransactions = transactions.filter((t: Transaction) => t.user_id === userId);
   const balance = userTransactions.reduce((sum: number, t: Transaction) => {
     if (t.status !== 'completed') return sum;
@@ -479,22 +528,22 @@ async function createOrderLog(
 
 async function getOrderLogs(orderId: string) {
   initializeStorage();
-  const logs = JSON.parse(localStorage.getItem('orderLogs') || '[]');
+  const logs: OrderLog[] = JSON.parse(localStorage.getItem('orderLogs') || '[]'); // Add type
   return logs.filter((log: OrderLog) => log.order_id === orderId);
 }
 
 async function getUserProfile(userId: string): Promise<UserProfile> {
   initializeStorage();
   const profiles = JSON.parse(localStorage.getItem('profiles') || '{}');
-  
+
   if (!profiles[userId]) {
-    const orders = JSON.parse(localStorage.getItem('orders') || '[]');
+    const orders: Order[] = JSON.parse(localStorage.getItem('orders') || '[]'); // Add type
     const wallet = await getWallet(userId);
-    
-    const userOrders = orders.filter((o: Order) => 
+
+    const userOrders = orders.filter((o: Order) =>
       o.user_id === userId || o.runner_id === userId
     );
-    
+
     const profile: UserProfile = {
       id: userId,
       name: userId === 'alice' ? 'Alice' : 'Ray',
@@ -584,7 +633,7 @@ async function submitReview(
 
 async function getReviews(runnerId: string): Promise<Review[]> {
   initializeStorage();
-  const reviews = JSON.parse(localStorage.getItem('reviews') || '[]');
+  const reviews: Review[] = JSON.parse(localStorage.getItem('reviews') || '[]'); // Add type
   return reviews.filter((r: Review) => r.runner_id === runnerId);
 }
 

@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS # Import CORS
 # from flask_migrate import Migrate
 import logging
 
@@ -23,6 +24,15 @@ def create_app(config_class=Config):
     # Initialize extensions with app
     db.init_app(app)
     # migrate.init_app(app, db)
+
+    # Initialize CORS - Allow requests from frontend origin with specific headers/methods
+    CORS(
+        app,
+        resources={r"/*": {"origins": "http://localhost:5173"}},
+        supports_credentials=True, # Allow cookies if needed in the future
+        allow_headers=["Content-Type", "Authorization"], # Explicitly allow required headers
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"] # Allow standard methods + OPTIONS for preflight
+    )
 
     # Register blueprints
     from app.api.routes import api as api_blueprint

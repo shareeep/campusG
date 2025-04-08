@@ -11,6 +11,7 @@ import { OrderFormPage } from '@/pages/customer/order-form';
 import { PaymentAuthorizationPage } from '@/pages/customer/payment-authorization';
 import { OrderTrackingPage } from '@/pages/customer/order-tracking';
 import { OrderHistoryPage } from '@/pages/customer/order-history';
+import { CreateOrderPage } from '@/pages/customer/create-order'; // Import CreateOrderPage
 import { AvailableOrdersPage } from '@/pages/runner/available-orders';
 import { ActiveOrdersPage } from '@/pages/runner/active-orders';
 
@@ -80,7 +81,7 @@ export function AppRoutes() {
           path="/customer/order"
           element={
             <RoleGuard allowedRole="customer">
-              <OrderFormPage />
+      <CreateOrderPage />
             </RoleGuard>
           }
         />

@@ -25,6 +25,7 @@ class Order(db.Model):
     order_description = db.Column(db.Text, nullable=False)
     food_fee = db.Column(db.Numeric(5, 2), nullable=False)
     delivery_fee = db.Column(db.Numeric(5, 2), nullable=False)
+    store_location = db.Column(db.String(255), nullable=True) # Added store location
     delivery_location = db.Column(db.String(255), nullable=False)
     order_status = db.Column(SQLAlchemyEnum(OrderStatus, native_enum=False), nullable=False, default=OrderStatus.PENDING, index=True)
     saga_id = db.Column(db.String(36), nullable=True, index=True) # Added saga_id column
@@ -44,6 +45,7 @@ class Order(db.Model):
             'orderDescription': self.order_description,
             'foodFee': float(self.food_fee),
             'deliveryFee': float(self.delivery_fee),
+            'storeLocation': self.store_location, # Added store location
             'deliveryLocation': self.delivery_location,
             'orderStatus': self.order_status.name,
             'sagaId': self.saga_id, # Added saga_id to dict representation

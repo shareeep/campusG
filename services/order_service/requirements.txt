@@ -12,3 +12,4 @@ black==23.3.0
 isort==5.12.0
 mypy==1.2.0
 Werkzeug==2.2.3
+Flask-Cors>=3.0 # Added for CORS support

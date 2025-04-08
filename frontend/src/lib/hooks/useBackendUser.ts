@@ -42,63 +42,83 @@ export function useBackendUser() {
         setLoading(false);
       }
     }, 15000); // 15 second timeout
-    
-    console.log("Syncing user data from Clerk to backend...", { clerkUserId: clerkUser.id });
+    console.log(`[syncUser] Starting sync for Clerk User ID: ${clerkUser.id}`);
     try {
-      // First try to fetch the user
+      console.log("[syncUser] Attempting to fetch user from backend...");
       let user = await getUserByClerkId(clerkUser.id);
-      
+      console.log(`[syncUser] Fetched user from backend:`, user);
+
       // Log user data to debug card info
       console.log('User data from backend before processing:', user);
       console.log('Has Stripe Card:', Boolean(user?.userStripeCard || user?.user_stripe_card));
-      
+
       if (user) {
+        console.log("[syncUser] User found in backend. Checking if update is needed...");
         // User exists, check if needs updating
         const primaryEmail = clerkUser.emailAddresses?.[0]?.emailAddress || '';
         const primaryPhone = clerkUser.phoneNumbers?.[0]?.phoneNumber || '';
-        
+
         const needsUpdate = 
           user.email !== primaryEmail ||
           user.first_name !== clerkUser.firstName ||
           user.last_name !== clerkUser.lastName ||
           (clerkUser.username && user.username !== clerkUser.username) ||
           (primaryPhone && user.phone_number !== primaryPhone);
-          
+
         if (needsUpdate) {
-          console.log('User data needs synchronization, updating...');
+          console.log('[syncUser] User data needs synchronization, attempting update...');
           user = await updateUserFromClerk(clerkUser.id, clerkUser);
+          console.log('[syncUser] User updated:', user);
+        } else {
+           console.log('[syncUser] User data is up-to-date. No update needed.');
         }
       } else {
         // User doesn't exist, create them
-        console.log('User not found in backend, creating...');
+        console.log('[syncUser] User not found in backend, attempting creation...');
         user = await createUserFromClerk(clerkUser);
+         console.log('[syncUser] User created:', user);
       }
-      
+
       // Reset sync timeout
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);
         syncTimeoutRef.current = null;
       }
-      
-      console.log('Final user data being set in state:', user);
-      console.log('Final user card data:', user?.userStripeCard || user?.user_stripe_card);
-      
+
+      console.log('[syncUser] Final user data before setting state:', user);
+      console.log('[syncUser] Final user card data:', user?.userStripeCard || user?.user_stripe_card);
+
       // Ensure we have a valid user object before updating state
       if (user) {
+        console.log("[syncUser] Setting backendUser state and syncState to 'synced'.");
         setBackendUser(user);
         setSyncState('synced');
+        // Clear timeout only on success
+        if (syncTimeoutRef.current) {
+           clearTimeout(syncTimeoutRef.current);
+           syncTimeoutRef.current = null;
+           console.log("[syncUser] Cleared sync timeout on success.");
+        }
         return user;
       } else {
-        throw new Error('Backend returned empty user data');
+         console.error("[syncUser] Backend returned empty or invalid user data after create/update.");
+         throw new Error('Backend returned empty user data');
       }
     } catch (err: unknown) {
-      console.error('Error syncing with backend:', err);
+      console.error('[syncUser] Error during sync process:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to sync user';
       setError(errorMessage);
       setSyncState('error');
+       // Clear timeout on error
+       if (syncTimeoutRef.current) {
+           clearTimeout(syncTimeoutRef.current);
+           syncTimeoutRef.current = null;
+           console.log("[syncUser] Cleared sync timeout on error.");
+       }
       return null;
     } finally {
-      // Clean up timeout if it exists
+      console.log("[syncUser] Sync function finally block executing.");
+      // Clean up timeout just in case it wasn't cleared (should be redundant now)
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);
         syncTimeoutRef.current = null;

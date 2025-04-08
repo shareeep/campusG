@@ -2,6 +2,7 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_cors import CORS # Import CORS
 import os
 import logging
 
@@ -35,7 +36,16 @@ def create_app():
     # Initialize extensions with the app
     db.init_app(app)
     migrate.init_app(app, db)
-    
+
+    # Initialize CORS
+    CORS(
+        app,
+        resources={r"/*": {"origins": "http://localhost:5173"}}, # Allow frontend origin
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization"], # Allow necessary headers
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"] # Allow necessary methods
+    )
+
     # Initialize Kafka and Accept Order Saga orchestrator
     from app.services.kafka_service import init_accept_order_kafka, accept_order_kafka_client
     from app.services.saga_orchestrator import init_accept_order_orchestrator

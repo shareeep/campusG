@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_cors import CORS # Import CORS
 import os
 import logging
 
@@ -34,6 +35,7 @@ def create_app():
     # Initialize extensions with the app
     db.init_app(app)
     migrate.init_app(app, db)
+    CORS(app, resources={r"/orders*": {"origins": "http://localhost:5173"}}) # Initialize CORS for /orders endpoint from frontend origin
     
     # Import and initialize Kafka and Orchestrator 
     from app.services.kafka_service import init_kafka, kafka_client
