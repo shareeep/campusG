@@ -441,6 +441,72 @@ def cancel_acceptance():
         current_app.logger.error(f"Error cancelling order acceptance: {str(e)}", exc_info=True)
         return jsonify({'error': f"Failed to cancel order acceptance: {str(e)}"}), 500
 
+@api.route('/clearRunner', methods=['POST'])
+def clear_runner():
+    """
+    Clear the runner_id for a specific order, setting it to null.
+    This typically reverts the order status to CREATED if it was ACCEPTED.
+
+    Expected JSON input:
+    {
+        "orderId": "order-uuid"
+    }
+
+    Returns:
+    {
+        "message": "Runner cleared successfully",
+        "order": {order object}
+    }
+    """
+    try:
+        data = request.json
+        if not data or 'orderId' not in data:
+            return jsonify({'error': 'Missing required field: orderId'}), 400
+
+        order_id = data['orderId']
+
+        # Retrieve the order from the database
+        order = Order.query.get(order_id)
+        if not order:
+            return jsonify({'error': 'Order not found'}), 404
+
+        # Optional: Add logic to check if the order status allows clearing the runner.
+        # For consistency with cancelAcceptance, let's only allow clearing if ACCEPTED.
+        if order.order_status != OrderStatus.ACCEPTED:
+             return jsonify({
+                 'error': f"Runner cannot be cleared in status: {order.order_status.name}. Use cancelAcceptance or similar."
+             }), 400
+
+        # Store the current runner_id for event logging
+        runner_id = order.runner_id
+
+        # Clear the runner_id and revert status to CREATED
+        order.runner_id = None
+        order.order_status = OrderStatus.CREATED # Revert status like cancelAcceptance
+        db.session.commit()
+
+        # Publish event using the correct method
+        # Consider a specific event type like 'ORDER_RUNNER_CLEARED'
+        kafka_client.publish_event(
+            'ORDER_RUNNER_CLEARED', # New event type
+            {
+                'customerId': order.cust_id,
+                'runnerId': runner_id, # Log the runner who was cleared
+                'orderId': order.order_id,
+                'status': 'runnerCleared', # New status description
+                'event': json.dumps(order.to_dict())
+            }
+        )
+
+        return jsonify({
+            'message': 'Runner cleared successfully',
+            'order': order.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error clearing runner for order: {str(e)}", exc_info=True)
+        return jsonify({'error': f"Failed to clear runner: {str(e)}"}), 500
 
 @api.route('/completeOrder', methods=['POST'])
 def complete_order():

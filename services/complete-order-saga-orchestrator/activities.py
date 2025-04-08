@@ -11,13 +11,12 @@ async def update_order_status(order_id: str, status: str) -> bool:
         response = requests.post(url, json={"orderId": order_id, "status": status})
         response.raise_for_status()
         print(f"Order {order_id} status updated to {status}")
-        return False
+        return True
     except Exception as e:
         print(f"Failed to update order {order_id} to {status}: {e}")
         attempt = activity.info().attempt
         raise ApplicationError(
             f"Error encountered on attempt {attempt}",
-            next_retry_delay=timedelta(seconds=3 * attempt),
         ) from e
     
 @activity.defn

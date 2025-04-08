@@ -1,7 +1,7 @@
 from temporalio.client import Client
 from temporalio.worker import Worker
 from workflow import AcceptOrderWorkflow
-from activities import verify_and_accept_order, notify_timer_service, revert_order_status, cancel_timer
+from activities import (verify_and_accept_order, notify_timer_service, revert_order_status)
 import asyncio
 import concurrent.futures
 from datetime import timedelta
@@ -14,12 +14,7 @@ async def main():
             client,
             task_queue="accept-order-task-queue",
             workflows=[AcceptOrderWorkflow],
-            activities=[
-                verify_and_accept_order,
-                notify_timer_service,
-                revert_order_status,
-                cancel_timer,
-            ],
+            activities=[verify_and_accept_order, notify_timer_service, revert_order_status],
             activity_executor=activity_executor
         )
         print("Starting Worker...")

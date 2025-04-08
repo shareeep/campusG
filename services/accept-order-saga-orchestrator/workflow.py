@@ -1,7 +1,7 @@
 from temporalio import workflow
 from datetime import timedelta
-with workflow.unsafe.imports_passed_through():
-    from activities import verify_and_accept_order, notify_timer_service, revert_order_status, cancel_timer
+# with workflow.unsafe.imports_passed_through():
+    # from activities import verify_and_accept_order, notify_timer_service, revert_order_status
 
 
 class Compensations:
@@ -17,7 +17,7 @@ class Compensations:
             try:
                 await workflow.execute_activity(
                     compensation["activity"],
-                    *compensation["args"],
+                    args=[compensation["args"]],
                     start_to_close_timeout=timedelta(seconds=10)
                 )
             except Exception as e:
@@ -27,13 +27,17 @@ class Compensations:
 class AcceptOrderWorkflow:
     @workflow.run
     async def run(self, input_data:dict) -> str:
-        compensations = Compensations()
+        compensation = Compensations()
         order_id = input_data.get("order_id", "Unknown")
         runner_id = input_data.get("runner_id", "Unknown")
         try:
+            compensation += {
+                "activity": "revert_order_status",
+                "args": (order_id)
+            }
         # Step 1: Verify and Accept Order
             order_accepted = await workflow.execute_activity(
-                verify_and_accept_order,
+                "verify_and_accept_order",
                 args=[order_id, runner_id],
                 start_to_close_timeout=timedelta(seconds=10)
             )
@@ -43,7 +47,7 @@ class AcceptOrderWorkflow:
 
             # Step 2: Notify Timer Service
             timer_notified = await workflow.execute_activity(
-                notify_timer_service,
+                "notify_timer_service",
                 order_id,
                 start_to_close_timeout=timedelta(seconds=10)
             )
@@ -54,5 +58,5 @@ class AcceptOrderWorkflow:
             return f"Order {order_id} successfully accepted and timer notified."
         except Exception as e:
             print(f"Workflow failed, triggering compensation: {e}")
-            await compensations.compensate()
+            await compensation.compensate()
             # raise e

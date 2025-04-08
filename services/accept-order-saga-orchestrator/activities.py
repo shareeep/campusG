@@ -5,14 +5,16 @@ import requests
 @activity.defn
 async def verify_and_accept_order(order_id: str, runner_id: str) -> bool:
     try:
+        print(f"Order {order_id} successfully verified and accepted.")
+        print(f"what is going on")
         url = "http://localhost:3002/verifyAndAcceptOrder"
         response = requests.post(url, json={
         "orderId": f"{order_id}",
         "runner_id": f"{runner_id}"
-    })
+        })
         response.raise_for_status()
-        print(f"Order {order_id} successfully verified and accepted.")
-        return True
+
+        return False
     except Exception as e:
         print(f"Failed to verify and accept order {order_id}: {e}")
         return False
@@ -21,8 +23,8 @@ async def verify_and_accept_order(order_id: str, runner_id: str) -> bool:
 @activity.defn
 async def revert_order_status(order_id: str) -> bool:
     try:
-        url = "http://localhost:3002/revertOrderStatus"
-        response = requests.post(url, json={"order_id": order_id, "status": "Created"})
+        url = "http://localhost:3002/clearRunner"
+        response = requests.post(url, json={"orderId": order_id})
         response.raise_for_status()
         print(f"Order {order_id} status reverted to Created.")
         return True
@@ -46,15 +48,3 @@ async def notify_timer_service(order_id: str) -> bool:
         print(f"Failed to notify Timer Service for order {order_id}: {e}")
         return False
 
-# Compensation for Activity 2: Cancel Timer in Timer Service
-@activity.defn
-async def cancel_timer(order_id: str) -> bool:
-    try:
-        url = "https://personal-7ndmvxwm.outsystemscloud.com/Timer_CS/rest/TimersAPI/CancelTimer"
-        response = requests.post(url, json={"Ordeid": order_id})
-        response.raise_for_status()
-        print(f"Timer for order {order_id} successfully cancelled.")
-        return True
-    except Exception as e:
-        print(f"Failed to cancel timer for order {order_id}: {e}")
-        return False

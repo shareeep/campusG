@@ -19,7 +19,7 @@ class Compensations:
             try:
                 await workflow.execute_activity(
                     compensation["activity"],
-                    *compensation["args"],
+                    args=[*compensation["args"]],
                     start_to_close_timeout=timedelta(seconds=10)
                 )
             except Exception as e:
@@ -31,7 +31,6 @@ class CompleteOrderWorkflow:
     async def run(self, input_data:dict) -> str :
         order_id = input_data.get("order_id", "Unknown")
         clerk_user_id = input_data.get("clerk_user_id", "Unknown")
-        # payment_info = None
         compensation = Compensations()
         try:
             # Step 2: Update order status to 'Delivered'
@@ -76,10 +75,6 @@ class CompleteOrderWorkflow:
                 raise Exception("Failed to release funds")
             
                     # Step 2: Update order status to 'Delivered'
-            compensation += {
-                                "activity": "rollback_update_order_status",
-                                "args": (order_id, "CANCELLED")
-                            }
             updated = await workflow.execute_activity(
                 "update_order_status",  # Activity name must be a string
                 args=[order_id, "COMPLETED"],
@@ -92,5 +87,5 @@ class CompleteOrderWorkflow:
             return "Order Completed"
         except Exception as e:
             print(f"Error occurred: {e}. Triggering rollback...")
-            compensation.compensate()
+            await compensation.compensate()
 
