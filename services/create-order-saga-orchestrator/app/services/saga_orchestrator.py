@@ -587,10 +587,13 @@ class CreateOrderSagaOrchestrator:
                 logger.warning(f"Received order.cancelled for saga {correlation_id} in unexpected state {saga_state.status.name}. Ignoring.")
                 return
 
-            logger.info(f"Received order.cancelled confirmation for saga {correlation_id}")
+            logger.info(f"Received order.cancelled confirmation for saga {correlation_id}. Current flags: order_cancelled={saga_state.order_cancelled_confirmed}, payment_reverted={saga_state.payment_reverted_confirmed}")
             saga_state.order_cancelled_confirmed = True
+            logger.info(f"Set order_cancelled_confirmed=True for saga {correlation_id}. Checking completion...")
             self._check_and_complete_compensation_or_cancellation(saga_state)
+            # Commit happens *after* checking completion
             db.session.commit()
+            logger.info(f"DB commit successful after handling order.cancelled for saga {correlation_id}. Final status: {saga_state.status.name}")
 
         except Exception as e:
             logger.error(f"Error handling order.cancelled for correlation_id {correlation_id}: {str(e)}", exc_info=True)
@@ -610,13 +613,17 @@ class CreateOrderSagaOrchestrator:
 
             # Check if the status in the payload indicates a successful revert
             # Payment service sends 'REVERTED' string in the 'status' field on success
-            if payload.get('status') == 'REVERTED':
-                logger.info(f"Received payment.released (reverted) confirmation for saga {correlation_id}")
+            revert_status = payload.get('status')
+            if revert_status == 'REVERTED':
+                logger.info(f"Received payment.released (REVERTED) confirmation for saga {correlation_id}. Current flags: order_cancelled={saga_state.order_cancelled_confirmed}, payment_reverted={saga_state.payment_reverted_confirmed}")
                 saga_state.payment_reverted_confirmed = True
+                logger.info(f"Set payment_reverted_confirmed=True for saga {correlation_id}. Checking completion...")
                 self._check_and_complete_compensation_or_cancellation(saga_state)
+                # Commit happens *after* checking completion
                 db.session.commit()
+                logger.info(f"DB commit successful after handling payment.released for saga {correlation_id}. Final status: {saga_state.status.name}")
             else:
-                 logger.warning(f"Received payment.released for saga {correlation_id}, but status was '{payload.get('status')}' not '{PaymentStatus.REVERTED.value}'. Not marking as reverted.")
+                 logger.warning(f"Received payment.released for saga {correlation_id}, but status was '{revert_status}' not 'REVERTED'. Not marking as reverted.")
 
 
         except Exception as e:
@@ -679,11 +686,13 @@ class CreateOrderSagaOrchestrator:
             if payment_revert_needed and not saga_state.payment_reverted_confirmed:
                 cancellation_complete = False
 
+            logger.info(f"Checking cancellation completion for saga {saga_state.id}: OrderNeeded={order_cancellation_needed}, OrderConfirmed={saga_state.order_cancelled_confirmed}, PaymentNeeded={payment_revert_needed}, PaymentConfirmed={saga_state.payment_reverted_confirmed}")
             if cancellation_complete:
                 logger.info(f"All required cancellation actions confirmed for saga {saga_state.id}. Updating status to CANCELLED.")
                 saga_state.update_status(SagaStatus.CANCELLED)
+                # Note: commit is handled by the calling event handler
             else:
-                 logger.info(f"Saga {saga_state.id} still cancelling. Order Cancelled Confirmed: {saga_state.order_cancelled_confirmed} (Needed: {order_cancellation_needed}), Payment Reverted Confirmed: {saga_state.payment_reverted_confirmed} (Needed: {payment_revert_needed})")
+                 logger.info(f"Saga {saga_state.id} still cancelling. Conditions not met for CANCELLED state.")
 
 
     # --- Cancellation Initiation ---
