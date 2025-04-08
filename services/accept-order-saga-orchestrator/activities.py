@@ -14,7 +14,8 @@ async def verify_and_accept_order(order_id: str, runner_id: str) -> bool:
         })
         response.raise_for_status()
 
-        return False
+        return True 
+    #false for compensation testing
     except Exception as e:
         print(f"Failed to verify and accept order {order_id}: {e}")
         return False
