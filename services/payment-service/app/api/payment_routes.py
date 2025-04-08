@@ -3,8 +3,11 @@ import uuid
 from datetime import datetime, timezone # Added timezone
 
 from app import db
-from app.models.models import Payment
+# Import PaymentStatus as well
+from app.models.models import Payment, PaymentStatus
 from flask import Blueprint, jsonify, current_app, request
+# Import SQLAlchemyError for specific DB error handling
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 api = Blueprint('api', __name__)
@@ -81,6 +84,60 @@ def health_check():
     """Basic health check endpoint."""
     # Add checks for DB and Kafka connection if needed
     return jsonify({"status": "healthy"}), 200
+
+
+# --- New Payment History Route ---
+@api.route('/history/<user_id>', methods=['GET'])
+def get_payment_history(user_id):
+    """
+    Fetches payment history for a given user, categorized into spent and earned.
+    """
+    logger.info(f"Fetching payment history for user_id: {user_id}")
+
+    try:
+        # Query for money spent (user is the customer)
+        # Include AUTHORIZED and SUCCEEDED as they represent charges initiated by the customer
+        spent_payments = Payment.query.filter(
+            Payment.customer_id == user_id,
+            Payment.status.in_([PaymentStatus.AUTHORIZED, PaymentStatus.SUCCEEDED])
+        ).order_by(Payment.created_at.desc()).all()
+
+        # Query for money earned (user is the runner)
+        # Include only SUCCEEDED payments where a transfer occurred
+        earned_payments = Payment.query.filter(
+            Payment.runner_id == user_id,
+            Payment.status == PaymentStatus.SUCCEEDED,
+            Payment.transfer_id.isnot(None) # Ensure payout transfer happened
+        ).order_by(Payment.created_at.desc()).all() # Still fetch all to calculate sum easily
+
+        # Get counts
+        spent_count = len(spent_payments)
+        earned_count = len(earned_payments)
+
+        # Calculate lifetime totals from the fetched objects
+        # Convert Numeric to float for summation
+        total_spent = sum(float(p.amount) for p in spent_payments)
+        total_earned = sum(float(p.amount) for p in earned_payments)
+
+        logger.info(f"Found {spent_count} spent (Total: {total_spent:.2f}) and {earned_count} earned (Total: {total_earned:.2f}) transactions for user {user_id}")
+
+        return jsonify({
+            'userId': user_id,
+            'totalSpent': round(total_spent, 2),
+            'totalEarned': round(total_earned, 2),
+            'spentCount': spent_count,   # Return count instead of list
+            'earnedCount': earned_count # Return count instead of list
+        }), 200
+
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        error_msg = f"Database error fetching payment history for user {user_id}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({"error": "DATABASE_ERROR", "message": error_msg}), 500
+    except Exception as e:
+        error_msg = f"Unexpected error fetching payment history for user {user_id}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return jsonify({"error": "PROCESSING_ERROR", "message": error_msg}), 500
 
 
 # --- API Endpoints to Trigger Kafka Commands ---
