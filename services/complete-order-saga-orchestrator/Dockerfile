@@ -13,5 +13,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Expose the port that Flask will run on
 EXPOSE 5000
 
-# Run the Flask application
-CMD ["python", "api_trigger.py"]
+# CMD instruction removed - command will be specified in docker-compose.yml

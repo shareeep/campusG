@@ -1,3 +1,4 @@
+import os # Added for environment variables
 from temporalio.client import Client
 from temporalio.worker import Worker
 from workflows import CompleteOrderWorkflow
@@ -6,7 +7,9 @@ import asyncio
 import concurrent.futures
 
 async def main():
-    client = await Client.connect("localhost:7233")
+    # Read Temporal endpoint from environment variable, default for local running
+    temporal_endpoint = os.getenv('TEMPORAL_GRPC_ENDPOINT', 'localhost:7233')
+    client = await Client.connect(temporal_endpoint)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=100) as activity_executor:
         worker = Worker(

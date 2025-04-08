@@ -7,4 +7,5 @@ python-dotenv==1.0.0
 confluent-kafka==2.1.1
 Werkzeug==2.2.3
 kafka-python==2.0.2
+temporalio==1.0.0 # Added missing temporal dependency
 Flask-Cors>=3.0 # Added for CORS support
