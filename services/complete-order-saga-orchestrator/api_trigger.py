@@ -8,12 +8,13 @@ app = Flask(__name__)
 
 # Define the async function to start a workflow
 async def trigger_workflow(input_data):
+    order_id = input_data.get("order_id")
     client = await Client.connect("localhost:7233")  # Connect to your Temporal server
     
     result = await client.start_workflow(
         CompleteOrderWorkflow.run,  # Note: Refer to the actual workflow function here
         input_data,  # This should be passed as a positional argument, not a keyword argument
-        id="order-workflow-001",
+        id=f"complete-order-workflow-{order_id}",  # Unique ID for the workflow
         task_queue="complete-order-queue",
         execution_timeout=timedelta(seconds=5)
     )
