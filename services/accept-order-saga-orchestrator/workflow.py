@@ -48,7 +48,7 @@ class AcceptOrderWorkflow:
             # Step 2: Notify Timer Service
             timer_notified = await workflow.execute_activity(
                 "notify_timer_service",
-                order_id,
+                args=[order_id, runner_id], # Pass both order_id and runner_id
                 start_to_close_timeout=timedelta(seconds=10)
             )
 

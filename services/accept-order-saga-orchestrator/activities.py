@@ -38,29 +38,29 @@ async def revert_order_status(order_id: str) -> bool:
 
 # Activity 2: Notify Timer Service of Order Acceptance
 @activity.defn
-async def notify_timer_service(order_id: str) -> bool:
+async def notify_timer_service(order_id: str, runner_id: str) -> bool: # Added runner_id parameter
+    timer_service_url = os.getenv('TIMER_SERVICE_URL', 'https://personal-7ndmvxwm.outsystemscloud.com/Timer_CS/rest/TimersAPI/StopTimer') # Read from env var
     try:
-        # url = "https://personal-7ndmvxwm.outsystemscloud.com/Timer_CS/rest/TimersAPI/StopTimer"
-        # response = requests.post(url, json={
-        # response.raise_for_status()
-        print(f"Order {order_id} successfully notified to Timer Service.")
+        url = timer_service_url # Use the variable
+        response = requests.post(url, json={ # Uncommented and corrected JSON keys
+            "OrderId": order_id,
+            "RunnerId": runner_id
+        })
+        response.raise_for_status() # Uncommented
+        print(f"Timer Service notified successfully for order {order_id}.") # Updated print message
         return True
     except Exception as e:
         print(f"Failed to notify Timer Service for order {order_id}: {e}")
         return False
-
-# # Example of corrected code to call Timer Service (if uncommented):
+    
+# Earlier version   
 # @activity.defn
-# async def notify_timer_service(order_id: str, runner_id: str) -> bool: # Added runner_id parameter
-#     timer_service_url = os.getenv('TIMER_SERVICE_URL', 'https://personal-7ndmvxwm.outsystemscloud.com/Timer_CS/rest/TimersAPI/StopTimer') # Read from env var
+# async def notify_timer_service(order_id: str) -> bool:
 #     try:
-#         url = timer_service_url # Use the variable
-#         response = requests.post(url, json={ # Uncommented and corrected JSON keys
-#             "OrderId": order_id,
-#             "RunnerId": runner_id
-#         })
-#         response.raise_for_status() # Uncommented
-#         print(f"Timer Service notified successfully for order {order_id}.") # Updated print message
+#         # url = "https://personal-7ndmvxwm.outsystemscloud.com/Timer_CS/rest/TimersAPI/StopTimer"
+#         # response = requests.post(url, json={
+#         # response.raise_for_status()
+#         print(f"Order {order_id} successfully notified to Timer Service.")
 #         return True
 #     except Exception as e:
 #         print(f"Failed to notify Timer Service for order {order_id}: {e}")
