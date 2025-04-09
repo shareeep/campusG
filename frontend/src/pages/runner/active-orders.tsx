@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react"; // Import useCallback
 import { Clock, MapPin, Package, History, Loader2, Store, Truck, CheckCircle2, User, LucideIcon } from "lucide-react"; // Added Truck, CheckCircle2, User, LucideIcon
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from '@clerk/clerk-react'; // Use Clerk auth
+import { getUserDetails } from "@/lib/api"; // Import getUserDetails
+import type { UserDetails } from "@/lib/api"; // Import UserDetails type
 // import { OrderLogs } from '@/components/order/order-logs'; // Removed unused import
 
 // Define BackendOrder type matching the order service response
@@ -131,8 +133,10 @@ export function ActiveOrdersPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null); // Track which order is being updated/completed
+  // State to store fetched customer names: { [custId: string]: string }
+  const [customerNames, setCustomerNames] = useState<Record<string, string>>({});
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => { // Use useCallback
     if (!runnerId) return;
     setIsLoading(true);
     setError(null);
@@ -157,14 +161,54 @@ export function ActiveOrdersPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [runnerId, getToken]); // Add dependency array for useCallback
 
   useEffect(() => {
     fetchOrders();
     // Optional: Add polling or switch to WebSocket/SSE
     // const interval = setInterval(fetchOrders, 10000);
     // return () => clearInterval(interval);
-  }, [runnerId, getToken]);
+  }, [runnerId, getToken]); // Add dependency array
+
+  // Effect to fetch customer names when orders change
+  useEffect(() => {
+    const fetchCustomerNames = async () => {
+      if (!allOrders.length || !getToken) return;
+
+      const token = await getToken();
+      if (!token) return; // Need token to fetch user details
+
+      const customerIdsToFetch = allOrders
+        .map(order => order.custId)
+        .filter((id): id is string => !!id && !customerNames[id]); // Filter out null/undefined and already fetched
+
+      if (!customerIdsToFetch.length) return;
+
+      const uniqueCustomerIds = [...new Set(customerIdsToFetch)];
+      const namePromises = uniqueCustomerIds.map(id => getUserDetails(id, token));
+
+      try {
+        const results = await Promise.all(namePromises);
+        const newNames: Record<string, string> = {};
+        // Add types for details and index
+        results.forEach((details: UserDetails | null, index: number) => {
+          if (details) {
+            // Prioritize username, fallback to first name
+            const name = details.username || details.firstName || `Customer (${uniqueCustomerIds[index].substring(0, 6)}...)`;
+            newNames[uniqueCustomerIds[index]] = name;
+          }
+        });
+
+        setCustomerNames(prevNames => ({ ...prevNames, ...newNames }));
+      } catch (err) {
+        console.error("Error fetching customer names:", err);
+        // Optionally show a toast or handle error
+      }
+    };
+
+    fetchCustomerNames();
+  }, [allOrders, getToken, customerNames]); // Depend on allOrders, getToken, and customerNames
+
 
   const handleUpdateStatus = async (order: BackendOrder) => {
     if (!runnerId) return;
@@ -244,7 +288,7 @@ export function ActiveOrdersPage() {
 
         toast({
             title: "Completion Initiated",
-            description: `Order completion process started for order ${order.orderId.substring(0, 8)}...`,
+            description: `Order completion process started for order ${order.orderId.substring(0, 8)}`,
         });
 
         // Wait 5 seconds, refresh data, then switch to the completed orders view
@@ -294,7 +338,7 @@ export function ActiveOrdersPage() {
 
     if (currentStatus === 'DELIVERED') {
       return {
-        text: 'Trigger Completion',
+        text: 'Mark as Complete!',
         action: () => handleCompleteOrderSaga(order),
         disabled: isLoading,
       };
@@ -359,11 +403,12 @@ export function ActiveOrdersPage() {
                 {/* Order Header */}
                 <div className="flex justify-between items-start mb-6">
                   <div>
-                    <h3 className="text-lg font-semibold mb-1">Order #{order.orderId.substring(0, 8)}...</h3>
-                    {/* Customer details might need fetching from user service */}
+                    <h3 className="text-lg font-semibold mb-1">Order #{order.orderId.substring(0, 8)}</h3>
+                    {/* Display Customer Name */}
                     <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <span>Customer ID:</span>
-                      <span className="font-medium">{order.custId.substring(0, 8)}...</span>
+                      <span>Customer:</span>
+                      {/* Use fetched name from state, fallback to ID or generic text */}
+                      <span className="font-medium">{customerNames[order.custId] || `Customer (${order.custId.substring(0, 6)}...)`}</span>
                       {/* Add contact button if needed, requires fetching customer details */}
                       {/* <a href={`...`} className="text-blue-600 hover:underline flex items-center gap-1">
                         <MessageSquare className="h-4 w-4" /> Contact

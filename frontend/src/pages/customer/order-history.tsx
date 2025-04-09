@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect } from "react"; // Removed unused useCallback
 import { Link } from "react-router-dom";
-import { Clock, Search, ChevronDown, Store, MapPin } from "lucide-react"; // Added Store, MapPin icons
+import { Clock, Search, ChevronDown, Store, MapPin, User } from "lucide-react"; // Added Store, MapPin, User icons
 import { useAuth } from "@clerk/clerk-react"; // Import useAuth
 // Removed unused Button import
 import { Input } from '@/components/ui/input';
-import { ReviewDialog } from '@/components/reviews/review-dialog';
+import { getUserDetails } from '@/lib/api'; // Import getUserDetails
 // Removed unused getUserOrders import
 // Removed unused useUser import
 
@@ -48,6 +48,7 @@ export function OrderHistoryPage() {
   const [orders, setOrders] = useState<BackendOrder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runnerNames, setRunnerNames] = useState<Record<string, string>>({}); // State for runner names
 
   // Fetch orders using the new endpoint and Clerk auth
   const fetchOrders = async () => {
@@ -88,7 +89,53 @@ export function OrderHistoryPage() {
       clearInterval(intervalId);
       console.log("[OrderHistoryPage] Cleanup: Cleared interval polling.");
     };
-  }, [userId, getToken]); // Add getToken to dependencies as fetchOrders uses it implicitly
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]); // Removed getToken from deps as fetchOrders doesn't directly use it, but relies on it being stable from useAuth
+
+  // Effect to fetch runner names when orders change
+  useEffect(() => {
+    const fetchRunnerNames = async () => {
+      if (!orders.length || !getToken) return;
+
+      const token = await getToken();
+      if (!token) return; // Need token to fetch
+
+      const runnerIdsToFetch = orders
+        .map(order => order.runnerId)
+        .filter((id): id is string => !!id && !runnerNames[id]); // Filter out null/undefined and already fetched IDs
+
+      if (!runnerIdsToFetch.length) return;
+
+      // Create a unique set of IDs to avoid redundant fetches
+      const uniqueRunnerIds = [...new Set(runnerIdsToFetch)];
+
+      console.log("[OrderHistoryPage] Fetching names for runner IDs:", uniqueRunnerIds);
+
+      const namePromises = uniqueRunnerIds.map(async (runnerId) => {
+        try {
+          const details = await getUserDetails(runnerId, token);
+          // Prioritize username, fallback to first name, then ID snippet
+          const name = details?.username || details?.firstName || `Runner (${runnerId.substring(0, 6)}...)`;
+          return { id: runnerId, name };
+        } catch (err) {
+          console.error(`[OrderHistoryPage] Error fetching name for runner ${runnerId}:`, err);
+          return { id: runnerId, name: `Runner (${runnerId.substring(0, 6)}...)` }; // Fallback on error
+        }
+      });
+
+      const fetchedNames = await Promise.all(namePromises);
+
+      setRunnerNames(prevNames => {
+        const newNames = { ...prevNames };
+        fetchedNames.forEach(({ id, name }) => {
+          newNames[id] = name;
+        });
+        return newNames;
+      });
+    };
+
+    fetchRunnerNames();
+  }, [orders, getToken, runnerNames]); // Depend on orders, getToken, and runnerNames map itself
 
   // Update filtering logic
   const filteredOrders = orders.filter(order => {
@@ -109,11 +156,6 @@ export function OrderHistoryPage() {
     const matchesStatus = !statusFilter || order.orderStatus === statusFilter;
     return matchesSearch && matchesStatus;
   });
-
-  // Re-fetch orders after review submission
-  const handleReviewSubmitted = () => {
-    fetchOrders();
-  };
 
   // Update getStatusColor to use backend OrderStatus enum values
   const getStatusColor = (status: keyof typeof OrderStatusEnum) => {
@@ -181,7 +223,7 @@ export function OrderHistoryPage() {
               <Link to={`/customer/order/${order.orderId}/tracking`} className="block">
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <h3 className="text-lg font-semibold">Order #{order.orderId.substring(0, 8)}...</h3> {/* Shorten ID */}
+                    <h3 className="text-lg font-semibold">Order #{order.orderId.substring(0, 8)}</h3> {/* Shorten ID */}
                     <p className="text-sm text-gray-600">
                       {new Date(order.createdAt).toLocaleDateString()} at{' '}
                       {new Date(order.createdAt).toLocaleTimeString()}
@@ -216,12 +258,14 @@ export function OrderHistoryPage() {
                 </div>
                 <div className="flex items-center justify-between mt-3"> {/* Added mt-3 */}
                   <div>
-                    {/* Removed item list display */}
-                    {/* Consider parsing orderDescription if item details are crucial here */}
-                    {order.runnerId && ( // Check if runner is assigned
-                      <p className="text-sm text-gray-500 mt-1">
-                        Runner Accepted {/* Removed runner_name and review check */}
-                      </p>
+                    {/* Display Runner Info */}
+                    {order.runnerId && (
+                      <div className="flex items-center text-sm text-gray-500 mt-1">
+                        <User className="h-4 w-4 mr-1 flex-shrink-0" />
+                        <span>
+                          {runnerNames[order.runnerId] ? `Runner: ${runnerNames[order.runnerId]}` : 'Runner Accepted'}
+                        </span>
+                      </div>
                     )}
                   </div>
                   <p className="font-semibold">
@@ -229,17 +273,7 @@ export function OrderHistoryPage() {
                   </p>
                 </div>
               </Link>
-              {/* Review Dialog outside the Link - Show if COMPLETED and runner exists */}
-              {order.orderStatus === 'COMPLETED' && order.runnerId && (
-                 <div className="mt-4 text-right"> {/* Position review button */}
-                    <ReviewDialog
-                      orderId={order.orderId}
-                      runnerId={order.runnerId} // Pass runnerId
-                      runnerName="the runner" // Pass generic name
-                      onReviewSubmitted={handleReviewSubmitted}
-                    />
-                 </div>
-              )}
+              {/* Review Dialog removed */}
             </div>
           ))}
 

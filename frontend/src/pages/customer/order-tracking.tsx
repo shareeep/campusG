@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'; // Added useCallback
-import { useParams, Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react'; // Keep single import
+import { useParams } from 'react-router-dom'; // Removed unused Link import
 import { Package, Truck, CheckCircle2, Loader2, User, Ban, LucideIcon } from 'lucide-react'; // Added Ban for cancel button, LucideIcon
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast'; // Re-added useToast
-import { getOrder, cancelSaga } from '@/lib/api'; // Removed unused confirmDelivery import, Added cancelSaga import
+import { getOrder, cancelSaga, getUserDetails } from '@/lib/api'; // Added getUserDetails
+// Removed unused UserDetails type import
+// import type { UserDetails } from '@/lib/api';
 // import { OrderLogs } from '@/components/order/order-logs'; // Removed unused import
 // import { useUser } from '@/lib/hooks/use-user'; // useUser might not be needed if userId comes from useAuth
 import { useAuth } from '@clerk/clerk-react'; // Import useAuth to get token and userId
@@ -69,6 +71,8 @@ export function OrderTrackingPage() {
   const [isCancelling, setIsCancelling] = useState(false); // For cancel order
   // Store interval ID in state or ref to clear it from within fetchOrder
   const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
+  // State for fetched runner name
+  const [runnerName, setRunnerName] = useState<string | null>(null);
 
   // Define fetchOrder using useCallback to stabilize its reference
   const fetchOrder = useCallback(async (currentIntervalId: NodeJS.Timeout | null) => {
@@ -151,6 +155,33 @@ export function OrderTrackingPage() {
     };
     // Add intervalId and fetchOrder to dependency array
   }, [routeOrderId, userId, getToken, isAuthLoaded, intervalId, fetchOrder]);
+
+  // Effect to fetch runner name when order data is available
+  useEffect(() => {
+    const fetchRunnerName = async () => {
+      if (!orderData?.runnerId || !getToken || runnerName) return; // Only fetch if runnerId exists and name not already fetched
+
+      const token = await getToken();
+      if (!token) return;
+
+      try {
+        const details = await getUserDetails(orderData.runnerId, token);
+        if (details) {
+          // Prioritize username, fallback to first name
+          const name = details.username || details.firstName || `Runner (${orderData.runnerId.substring(0, 6)}...)`;
+          setRunnerName(name);
+        } else {
+          setRunnerName(`Runner (${orderData.runnerId.substring(0, 6)}...)`); // Fallback if fetch fails
+        }
+      } catch (err) {
+        console.error("Error fetching runner name for tracking page:", err);
+        setRunnerName(`Runner (${orderData.runnerId.substring(0, 6)}...)`); // Fallback on error
+      }
+    };
+
+    fetchRunnerName();
+  }, [orderData, getToken, runnerName]); // Depend on orderData, getToken, and runnerName
+
 
   // Handler for cancelling an order
   const handleCancelOrder = async () => {
@@ -245,7 +276,6 @@ export function OrderTrackingPage() {
       'picked_up',
       'delivered',
       'completed' // Added 'completed' to the hierarchy
-      // 'reviewed' // Not typically shown as a mandatory step in this kind of timeline
     ];
 
     // Calculate currentStatusIndex using the mapped status
@@ -298,7 +328,8 @@ export function OrderTrackingPage() {
       },
       {
         title: 'Runner Accepted', // Changed title
-        description: orderData.runnerId ? `Runner ${orderData.runnerId.substring(0, 6)}... accepted` : 'Waiting for runner', // Changed description
+        // Use fetched runnerName state here
+        description: runnerName ? `${runnerName} accepted` : (orderData.runnerId ? 'Fetching runner name...' : 'Waiting for runner'),
         icon: User,
         // Completed if current status is 'runner_assigned' or beyond
         status: currentStatusIndex >= statusHierarchy.indexOf('runner_assigned') ? 'completed' : 'pending',
@@ -401,13 +432,11 @@ export function OrderTrackingPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <User className="h-5 w-5 text-blue-600" />
-                        {/* Link might need adjustment if runner profiles are fetched differently */}
-                        <Link
-                          to={`/profile/${orderData.runnerId}`}
-                          className="text-blue-600 hover:underline"
-                        >
-                          Runner ID: {orderData.runnerId.substring(0, 8)}...
-                        </Link>
+                        {/* Display fetched runner name */}
+                        <span className="text-gray-700">
+                          {runnerName || `Runner ID: ${orderData.runnerId.substring(0, 8)}...`}
+                        </span>
+                        {/* Removed unused Link component */}
                       </div>
                     </div>
                   </div>

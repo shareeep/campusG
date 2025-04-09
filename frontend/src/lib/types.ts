@@ -8,22 +8,12 @@ export type OrderStatus =
   | 'order_placed'      // Runner has placed the order
   | 'picked_up'        // Runner has picked up the order
   | 'delivered'        // Order has been delivered
-  | 'completed'        // Both parties confirmed and payment released
-  | 'reviewed';        // Customer has submitted a review
+  | 'completed';        // Both parties confirmed and payment released
 
 export type PaymentStatus = 'pending' | 'held' | 'released';
 export type DeliveryConfirmation = 'pending' | 'confirmed';
 
-export interface Review {
-  id: string;
-  order_id: string;
-  runner_id: string;
-  customer_id: string;
-  customer_name: string;
-  rating: number;
-  comment: string;
-  created_at: string;
-}
+// Removed Review interface
 
 export interface OrderItem {
   id?: string;
@@ -63,7 +53,7 @@ export interface Order {
   deliveryFee: number;
   total: number;
   instructions?: string;
-  review?: Review;
+  // Removed review field
   created_at?: string;
   updated_at?: string;
 }
@@ -115,7 +105,7 @@ export interface UserProfile {
     completionRate?: number; // For runners
     averageRating?: number; // For runners
   };
-  reviews?: Review[];
+  // Removed reviews field
   created_at: string;
 }
 

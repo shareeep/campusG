@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import type { 
+import type {
   Order,
   OrderStatus,
   // PaymentStatus, // Removed as unused
@@ -9,7 +9,6 @@ import type {
   OrderLog,
   UserProfile, // Keep UserProfile import
   UserRole,
-  Review,
   ApiOrderResponse // Import ApiOrderResponse
 } from './types';
 
@@ -33,9 +32,6 @@ const initializeStorage = () => {
   if (!localStorage.getItem('profiles')) {
     localStorage.setItem('profiles', JSON.stringify({}));
   }
-  if (!localStorage.getItem('reviews')) {
-    localStorage.setItem('reviews', JSON.stringify([]));
-  }
 };
 
 function generateOrderId() {
@@ -47,7 +43,7 @@ function generateOrderId() {
 async function recalculateUserStats(userId: string, role: UserRole) {
   const orders = JSON.parse(localStorage.getItem('orders') || '[]');
   const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-  const reviews = JSON.parse(localStorage.getItem('reviews') || '[]');
+  // Removed reviews variable
   const profiles = JSON.parse(localStorage.getItem('profiles') || '{}');
 
   const profile: UserProfile = profiles[userId] || await getUserProfile(userId); // Add type
@@ -94,10 +90,8 @@ async function recalculateUserStats(userId: string, role: UserRole) {
       ? (runnerOrders.length / allRunnerOrders.length) * 100
       : 0;
 
-    const userReviews = reviews.filter((r: Review) => r.runner_id === userId); // Add type
-    const averageRating = userReviews.length > 0
-      ? userReviews.reduce((sum: number, r: Review) => sum + r.rating, 0) / userReviews.length // Add types
-      : undefined;
+    // Removed review calculation logic
+    const averageRating = undefined; // Set averageRating to undefined
 
     stats = {
       ...stats,
@@ -215,10 +209,10 @@ async function updateOrderStatus(orderId: string, status: OrderStatus) {
   initializeStorage();
   const orders = JSON.parse(localStorage.getItem('orders') || '[]');
   const order = orders.find((o: Order) => o.order_id === orderId);
-  
+
   if (!order) return;
 
-  const updatedOrders = orders.map((o: Order) => 
+  const updatedOrders = orders.map((o: Order) =>
     o.order_id === orderId ? { ...o, status, updated_at: new Date().toISOString() } : o
   );
   localStorage.setItem('orders', JSON.stringify(updatedOrders));
@@ -262,7 +256,7 @@ async function confirmDelivery(orderId: string, userId: string, role: 'customer'
   initializeStorage();
   const orders = JSON.parse(localStorage.getItem('orders') || '[]');
   const order = orders.find((o: Order) => o.order_id === orderId);
-  
+
   if (!order) return;
 
   // Only allow confirmation if order is in picked_up or delivered status
@@ -271,12 +265,12 @@ async function confirmDelivery(orderId: string, userId: string, role: 'customer'
   }
 
   const confirmationField = role === 'customer' ? 'customer_confirmation' : 'runner_confirmation';
-  
+
   // Update the confirmation status
   const updatedOrders = orders.map((o: Order) => {
     if (o.order_id === orderId) {
-      const updatedOrder = { 
-        ...o, 
+      const updatedOrder = {
+        ...o,
         [confirmationField]: 'confirmed',
         updated_at: new Date().toISOString()
       };
@@ -303,7 +297,7 @@ async function confirmDelivery(orderId: string, userId: string, role: 'customer'
 
   // Create notifications
   const updatedOrder = updatedOrders.find((o: Order) => o.order_id === orderId);
-  
+
   if (updatedOrder?.status === 'completed') {
     // Both parties have confirmed
     if (order.user_id) {
@@ -383,16 +377,16 @@ async function acceptOrder(orderId: string, runnerId: string) {
   initializeStorage();
   const orders = JSON.parse(localStorage.getItem('orders') || '[]');
   const order = orders.find((o: Order) => o.order_id === orderId);
-  
+
   if (!order) return;
 
   // Get runner's name from profile
   const runnerProfile = await getUserProfile(runnerId);
   const runnerName = runnerProfile.name;
 
-  const updatedOrders = orders.map((o: Order) => 
-    o.order_id === orderId ? { 
-      ...o, 
+  const updatedOrders = orders.map((o: Order) =>
+    o.order_id === orderId ? {
+      ...o,
       runner_id: runnerId,
       runner_name: runnerName,
       status: 'runner_assigned',
@@ -428,8 +422,8 @@ async function getAvailableOrders() {
 async function getActiveOrders(runnerId: string) {
   initializeStorage();
   const orders = JSON.parse(localStorage.getItem('orders') || '[]');
-  return orders.filter((order: Order) => 
-    order.runner_id === runnerId && 
+  return orders.filter((order: Order) =>
+    order.runner_id === runnerId &&
     ['runner_assigned', 'order_placed', 'picked_up', 'delivered'].includes(order.status)
   );
 }
@@ -437,8 +431,8 @@ async function getActiveOrders(runnerId: string) {
 async function getCompletedOrders(runnerId: string) {
   initializeStorage();
   const orders = JSON.parse(localStorage.getItem('orders') || '[]');
-  return orders.filter((order: Order) => 
-    order.runner_id === runnerId && 
+  return orders.filter((order: Order) =>
+    order.runner_id === runnerId &&
     order.status === 'completed'
   );
 }
@@ -474,7 +468,7 @@ async function createNotification(
 ) {
   initializeStorage();
   const notifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-  
+
   const notification: Notification = {
     id: nanoid(),
     user_id: userId,
@@ -512,7 +506,7 @@ async function createOrderLog(
 ) {
   initializeStorage();
   const logs = JSON.parse(localStorage.getItem('orderLogs') || '[]');
-  
+
   const log: OrderLog = {
     id: nanoid(),
     order_id: orderId,
@@ -552,7 +546,7 @@ async function getUserProfile(userId: string): Promise<UserProfile> {
       roles: userId === 'alice' ? ['customer'] : ['runner'],
       stats: {
         totalOrders: userOrders.length,
-        totalSpent: userId === 'alice' 
+        totalSpent: userId === 'alice'
           ? wallet.transactions
               .filter(t => t.type === 'payment' && t.status === 'completed')
               .reduce((sum, t) => sum + t.amount, 0)
@@ -587,55 +581,9 @@ async function updateUserProfile(userId: string, profile: Partial<UserProfile>) 
   return profiles[userId];
 }
 
-async function submitReview(
-  orderId: string,
-  runnerId: string,
-  customerId: string,
-  rating: number,
-  comment: string
-): Promise<void> {
-  initializeStorage();
-  const reviews = JSON.parse(localStorage.getItem('reviews') || '[]');
-  const customerProfile = await getUserProfile(customerId);
-  
-  const review: Review = {
-    id: nanoid(),
-    order_id: orderId,
-    runner_id: runnerId,
-    customer_id: customerId,
-    customer_name: customerProfile.name,
-    rating,
-    comment,
-    created_at: new Date().toISOString()
-  };
-  
-  reviews.push(review);
-  localStorage.setItem('reviews', JSON.stringify(reviews));
+// Removed submitReview function
 
-  // Update order status to reviewed
-  const orders = JSON.parse(localStorage.getItem('orders') || '[]');
-  const updatedOrders = orders.map((o: Order) =>
-    o.order_id === orderId ? { ...o, status: 'reviewed', review } : o
-  );
-  localStorage.setItem('orders', JSON.stringify(updatedOrders));
-  
-  // Create notification for runner
-  createNotification(
-    runnerId,
-    'New Review',
-    `You received a ${rating}-star review for order #${orderId}`,
-    'info'
-  );
-  
-  // Recalculate runner's stats
-  await recalculateUserStats(runnerId, 'runner');
-}
-
-async function getReviews(runnerId: string): Promise<Review[]> {
-  initializeStorage();
-  const reviews: Review[] = JSON.parse(localStorage.getItem('reviews') || '[]'); // Add type
-  return reviews.filter((r: Review) => r.runner_id === runnerId);
-}
+// Removed getReviews function
 
 // Function to call the saga orchestrator's cancel endpoint
 async function cancelSaga(sagaId: string, token: string | null): Promise<{ success: boolean; message: string }> {
@@ -643,7 +591,7 @@ async function cancelSaga(sagaId: string, token: string | null): Promise<{ succe
     console.error("CancelSaga Error: Authentication token is missing.");
     return { success: false, message: "Authentication token is missing." };
   }
-  
+
   if (!sagaId) {
     console.error("CancelSaga Error: Saga ID is missing.");
     return { success: false, message: "Saga ID is missing." };
@@ -683,8 +631,8 @@ async function cancelSaga(sagaId: string, token: string | null): Promise<{ succe
         } catch { /* Ignore */ }
       }
       // Use type assertion and optional chaining to avoid TypeScript error
-      const errorMessage = typeof errorBody === 'object' 
-        ? (errorBody as Record<string, unknown>)?.error as string || JSON.stringify(errorBody) 
+      const errorMessage = typeof errorBody === 'object'
+        ? (errorBody as Record<string, unknown>)?.error as string || JSON.stringify(errorBody)
         : errorBody;
       console.error(`CancelSaga Error: Failed to cancel saga ${sagaId}. Status: ${response.status}. Body: ${errorMessage}`);
       return { success: false, message: `Failed to cancel: ${errorMessage || response.statusText}` };
@@ -696,6 +644,59 @@ async function cancelSaga(sagaId: string, token: string | null): Promise<{ succe
     return { success: false, message: `Network error: ${message}` };
   }
 }
+
+// --- User Service ---
+
+// Define a type for the user details we expect from the user service API
+interface UserDetails {
+  clerkUserId: string;
+  username: string | null;
+  firstName: string;
+  lastName: string;
+  email: string;
+  // Add other fields if needed
+}
+
+// Function to fetch user details by Clerk User ID
+const getUserDetails = async (userId: string, token: string): Promise<UserDetails | null> => {
+  // Get User Service URL from environment variables or default
+  const USER_SERVICE_URL = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:3001';
+  const apiUrl = `${USER_SERVICE_URL}/user/${userId}`;
+
+  if (!token) {
+    console.error("GetUserDetails Error: Authentication token is missing.");
+    return null;
+  }
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`GetUserDetails Error: Failed to fetch user ${userId}. Status: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.success && data.user) {
+      // Return the user object which should match UserDetails structure
+      return data.user as UserDetails;
+    } else {
+      console.warn(`GetUserDetails Warning: User service response for ${userId} indicates failure or missing 'user' key. Response:`, data);
+      return null;
+    }
+  } catch (error) {
+    console.error(`GetUserDetails Error: Network or parsing error fetching user ${userId}:`, error);
+    return null;
+  }
+};
+// --- End User Service ---
+
 
 export {
   createOrder,
@@ -713,8 +714,11 @@ export {
   getOrderLogs,
   getUserProfile,
   updateUserProfile,
-  submitReview,
-  getReviews,
+  // Removed submitReview export
+  // Removed getReviews export
   recalculateUserStats,
-  cancelSaga
+  cancelSaga,
+  getUserDetails // Add getUserDetails to exports
 };
+
+export type { UserDetails }; // Export the UserDetails type separately

@@ -190,7 +190,7 @@ export function AvailableOrdersPage() {
                 <div key={order.orderId} className="bg-white p-6 rounded-lg shadow-sm">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h3 className="text-lg font-semibold">Order #{order.orderId.substring(0, 8)}...</h3>
+                      <h3 className="text-lg font-semibold">Order #{order.orderId.substring(0, 8)}</h3>
                       {/* Customer details might need fetching from user service if required */}
                       {/* <div className="flex items-center gap-2 text-sm text-gray-600">
                         <span>Customer ID:</span>
