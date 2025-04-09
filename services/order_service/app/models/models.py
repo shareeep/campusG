@@ -29,8 +29,9 @@ class Order(db.Model):
     delivery_location = db.Column(db.String(255), nullable=False)
     order_status = db.Column(SQLAlchemyEnum(OrderStatus, native_enum=False), nullable=False, default=OrderStatus.PENDING, index=True)
     saga_id = db.Column(db.String(36), nullable=True, index=True) # Added saga_id column
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    # Use db.func.now() to ensure the database sets the timestamp at the time of creation/update
+    created_at = db.Column(db.DateTime, nullable=False, default=db.func.now())
+    updated_at = db.Column(db.DateTime, nullable=False, default=db.func.now(), onupdate=db.func.now())
     completed_at = db.Column(db.DateTime, nullable=True)
 
     def __repr__(self):

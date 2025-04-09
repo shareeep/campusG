@@ -202,34 +202,41 @@ export function OrderTrackingPage() {
       return null;
     };
 
+    // Define the sequence of statuses
+    const statusHierarchy: OrderStatus[] = ['created', 'runner_assigned', 'order_placed', 'picked_up', 'delivered', 'completed', 'reviewed'];
+    const currentStatusIndex = statusHierarchy.indexOf(currentStatus);
+
     const steps = [
       {
         title: 'Order Created',
         description: 'Your order has been created',
         icon: Package,
-        status: 'completed', // Always completed if order exists
+        // Completed if current status is 'created' or beyond
+        status: currentStatusIndex >= statusHierarchy.indexOf('created') ? 'completed' : 'pending',
         time: getStatusTime('created')
       },
       {
         title: 'Runner Assigned',
-        // Runner info might not be in this API response, adjust description
         description: orderData.runnerId ? `Runner ${orderData.runnerId.substring(0, 6)}... assigned` : 'Waiting for runner',
         icon: User,
-        status: currentStatus === 'created' ? 'pending' : 'completed',
+        // Completed if current status is 'runner_assigned' or beyond
+        status: currentStatusIndex >= statusHierarchy.indexOf('runner_assigned') ? 'completed' : 'pending',
         time: getStatusTime('runner_assigned')
       },
       {
         title: 'Order Placed',
         description: 'Runner has placed your order',
         icon: Package,
-        status: ['created', 'runner_assigned'].includes(currentStatus) ? 'pending' : 'completed',
+         // Completed if current status is 'order_placed' or beyond
+        status: currentStatusIndex >= statusHierarchy.indexOf('order_placed') ? 'completed' : 'pending',
         time: getStatusTime('order_placed')
       },
       {
         title: 'Order Picked Up',
         description: 'Your order is on its way',
         icon: Truck,
-        status: ['created', 'runner_assigned', 'order_placed'].includes(currentStatus) ? 'pending' : 'completed',
+         // Completed if current status is 'picked_up' or beyond
+        status: currentStatusIndex >= statusHierarchy.indexOf('picked_up') ? 'completed' : 'pending',
         time: getStatusTime('picked_up')
       },
       {
