@@ -1,10 +1,6 @@
 from temporalio import workflow
 from datetime import timedelta
-# with workflow.unsafe.imports_passed_through():
-#     from activities import {
-#         rollback_update_order_status,
-#         rollback_release_funds
-#     }
+
 
 class Compensations:
     def __init__(self):
@@ -67,10 +63,10 @@ class CompleteOrderWorkflow:
 
             # Add compensation for the COMPLETED status update
             # If completion fails, roll back status (e.g., to DELIVERED)
-            compensation += { # Corrected indent
-                                "activity": "rollback_update_order_status",
-                                "args": (order_id, "DELIVERED") # Rollback COMPLETED to DELIVERED
-                            }
+            # compensation += { # Corrected indent
+            #                     "activity": "rollback_update_order_status",
+            #                     "args": (order_id, "DELIVERED") # Rollback COMPLETED to DELIVERED
+            #                 }
             # Update order status to 'COMPLETED'
             updated = await workflow.execute_activity( # Corrected indent
                 "update_order_status",

@@ -21,18 +21,18 @@ async def update_order_status(order_id: str, status: str) -> bool:
             f"Error encountered on attempt {attempt}",
         ) from e
     
-@activity.defn
-async def rollback_update_order_status(order_id: str, status: str) -> bool:
-    order_service_url = os.getenv('ORDER_SERVICE_URL', 'http://localhost:3002')
-    try:
-        url = f"{order_service_url}/updateOrderStatus"
-        response = requests.post(url, json={"orderId": order_id, "status": status})
-        response.raise_for_status()
-        print(f"Rollback successful: Order {order_id} status reverted to {status}")
-        return True
-    except Exception as e:
-        print(f"Failed to rollback order {order_id}: {e}")
-        return False
+# @activity.defn
+# async def rollback_update_order_status(order_id: str, status: str) -> bool:
+#     order_service_url = os.getenv('ORDER_SERVICE_URL', 'http://localhost:3002')
+#     try:
+#         url = f"{order_service_url}/updateOrderStatus"
+#         response = requests.post(url, json={"orderId": order_id, "status": status})
+#         response.raise_for_status()
+#         print(f"Rollback successful: Order {order_id} status reverted to {status}")
+#         return True
+#     except Exception as e:
+#         print(f"Failed to rollback order {order_id}: {e}")
+#         return False
 
 # Activity to get payment info from User Service
 @activity.defn
