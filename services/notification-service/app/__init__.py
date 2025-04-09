@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_cors import CORS # Import CORS
 import os
 
 # Initialize SQLAlchemy without binding to a specific app
@@ -10,6 +11,9 @@ migrate = Migrate()
 def create_app(config=None):
     """Create and configure the Flask application"""
     app = Flask(__name__)
+
+    # Initialize CORS - Allow requests from frontend origin
+    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
     
     # Load default configuration
     app.config.from_mapping(

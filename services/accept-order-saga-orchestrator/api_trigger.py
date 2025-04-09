@@ -1,11 +1,13 @@
 import os # Added for environment variables
 from temporalio.client import Client
 from flask import Flask, request, jsonify
+from flask_cors import CORS # Import CORS
 import asyncio
 from workflow import AcceptOrderWorkflow
 from datetime import timedelta
 
 app = Flask(__name__)
+CORS(app, origins=["http://localhost:5173"]) # Enable CORS for the frontend origin
 
 # Define the async function to start the workflow
 async def trigger_workflow(input_data):
