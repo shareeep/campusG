@@ -181,12 +181,12 @@ export function ActiveOrdersPage() {
             description: `Order completion process started for order ${order.orderId.substring(0, 8)}...`,
         });
 
-        // Wait 2 seconds then switch to the completed orders view
-        setTimeout(() => {
+        // Wait 5 seconds, refresh data, then switch to the completed orders view
+        setTimeout(async () => { // Make the callback async
+          await fetchOrders(); // Re-fetch orders to get updated status
           setShowCompleted(true);
-          // Optionally re-fetch orders here if needed immediately after switching view
-          // fetchOrders(); 
-        }, 2000); // 2000 milliseconds = 2 seconds
+          // Update URL parameter as well (will be added in the next step)
+        }, 5000); // 5000 milliseconds = 5 seconds
 
      } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to initiate order completion.';
