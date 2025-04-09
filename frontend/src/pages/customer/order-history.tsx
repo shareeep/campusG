@@ -78,11 +78,17 @@ export function OrderHistoryPage() {
 
 
   useEffect(() => {
-    fetchOrders();
-    // Optional: Keep polling or switch to WebSocket/SSE for real-time updates
-    // const interval = setInterval(fetchOrders, 10000); // Poll every 10 seconds
-    // return () => clearInterval(interval);
-  }, [userId]); // Re-fetch if userId changes
+    fetchOrders(); // Initial fetch
+
+    // Start polling every 10 seconds
+    const intervalId = setInterval(fetchOrders, 10000); 
+
+    // Cleanup function to clear the interval when the component unmounts
+    return () => {
+      clearInterval(intervalId);
+      console.log("[OrderHistoryPage] Cleanup: Cleared interval polling.");
+    };
+  }, [userId, getToken]); // Add getToken to dependencies as fetchOrders uses it implicitly
 
   // Update filtering logic
   const filteredOrders = orders.filter(order => {
@@ -186,9 +192,12 @@ export function OrderHistoryPage() {
                       {order.orderStatus === "ON_THE_WAY" && ( // Check for ON_THE_WAY
                         <Clock className="inline-block h-4 w-4 mr-1" />
                       )}
-                      {/* Format status name */}
-                      {order.orderStatus.replace('_', ' ').charAt(0).toUpperCase() +
-                       order.orderStatus.replace('_', ' ').slice(1).toLowerCase()}
+                      {/* Format status name properly */}
+                      {order.orderStatus
+                        .toLowerCase()
+                        .split('_')
+                        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                        .join(' ')}
                     </span>
                   </div>
                 </div>

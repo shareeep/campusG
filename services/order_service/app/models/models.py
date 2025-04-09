@@ -32,7 +32,13 @@ class Order(db.Model):
     # Use db.func.now() to ensure the database sets the timestamp at the time of creation/update
     created_at = db.Column(db.DateTime, nullable=False, default=db.func.now())
     updated_at = db.Column(db.DateTime, nullable=False, default=db.func.now(), onupdate=db.func.now())
+    # Timestamps for specific status changes
+    accepted_at = db.Column(db.DateTime, nullable=True)
+    placed_at = db.Column(db.DateTime, nullable=True)
+    picked_up_at = db.Column(db.DateTime, nullable=True) # Corresponds to ON_THE_WAY
+    delivered_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
+    cancelled_at = db.Column(db.DateTime, nullable=True) # Added for cancelled status
 
     def __repr__(self):
         return f"<Order {self.order_id}>"
@@ -49,8 +55,14 @@ class Order(db.Model):
             'storeLocation': self.store_location, # Added store location
             'deliveryLocation': self.delivery_location,
             'orderStatus': self.order_status.name,
-            'sagaId': self.saga_id, # Added saga_id to dict representation
-            'createdAt': self.created_at.isoformat(),
-            'updatedAt': self.updated_at.isoformat(),
-            'completedAt': self.completed_at.isoformat() if self.completed_at else None
+            'sagaId': self.saga_id,
+            'createdAt': self.created_at.isoformat() if self.created_at else None,
+            'updatedAt': self.updated_at.isoformat() if self.updated_at else None,
+            # Add new timestamps to dict, handling None values
+            'acceptedAt': self.accepted_at.isoformat() if self.accepted_at else None,
+            'placedAt': self.placed_at.isoformat() if self.placed_at else None,
+            'pickedUpAt': self.picked_up_at.isoformat() if self.picked_up_at else None,
+            'deliveredAt': self.delivered_at.isoformat() if self.delivered_at else None,
+            'completedAt': self.completed_at.isoformat() if self.completed_at else None,
+            'cancelledAt': self.cancelled_at.isoformat() if self.cancelled_at else None
         }
