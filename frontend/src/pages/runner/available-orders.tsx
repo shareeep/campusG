@@ -261,7 +261,7 @@ export function AvailableOrdersPage() {
                         Accepting...
                       </>
                     ) : (
-                      `Accept Order (${order.deliveryFee.toFixed(2)} delivery fee)`
+                      `Accept Order ($${order.deliveryFee.toFixed(2)} delivery fee)` // Added $ sign here
                     )}
                   </Button>
                 </div>

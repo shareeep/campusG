@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Plus, ShoppingBag, Building, DoorClosed, School, MapPin, AlertCircle } from 'lucide-react'; // Added icons
+import { Loader2, Plus, ShoppingBag, DoorClosed, School, AlertCircle } from 'lucide-react'; // Removed Building, MapPin
 import { useAuth } from '@clerk/clerk-react';
 import { useUserSync } from '@/providers/UserSyncProvider';
 import { Button } from '@/components/ui/button';
@@ -17,19 +17,17 @@ interface OrderItem {
   price: number;
 }
 
-// Define structure for store details
+// Define structure for store details (name and location)
 interface StoreDetails {
   name: string;
-  postalCode: string;
+  location: string; // Add location back
 }
 
 // Define structure for delivery details
 interface DeliveryDetails {
-  school: string;
-  building: string;
-  level: string;
-  roomNumber: string;
-  meetingPoint?: string; // Optional meeting point
+  schoolOrBuilding: string;
+  roomTypeAndNumber: string; // Combined room type and number
+  deliveryInstructions?: string;
 }
 
 export function CreateOrderPage() {
@@ -44,17 +42,15 @@ export function CreateOrderPage() {
 
   // State for form fields based on order-form.tsx structure
   const [items, setItems] = useState<Array<OrderItem>>([{ name: '', quantity: 1, price: 0 }]);
-  const [storeDetails, setStoreDetails] = useState<StoreDetails>({ name: '', postalCode: '' });
+  const [storeDetails, setStoreDetails] = useState<StoreDetails>({ name: '', location: '' }); // State for both fields
   const [deliveryDetails, setDeliveryDetails] = useState<DeliveryDetails>({
-    school: '',
-    building: '',
-    level: '',
-    roomNumber: '',
-    meetingPoint: '',
+    schoolOrBuilding: '',
+    roomTypeAndNumber: '', // Initialize new field
+    deliveryInstructions: '',
   });
-  const [useMeetingPoint, setUseMeetingPoint] = useState(false);
-  const [instructions, setInstructions] = useState('');
-  const [deliveryFee, setDeliveryFee] = useState<number>(5); // Add delivery fee state
+  // Removed useMeetingPoint state
+  // Removed instructions state
+  const [deliveryFee, setDeliveryFee] = useState<number>(2); // Add delivery fee state
 
   const addItem = () => {
     setItems([...items, { name: '', quantity: 1, price: 0 }]);
@@ -76,9 +72,11 @@ export function CreateOrderPage() {
     }
   };
 
+  // handleStoreChange for both fields
   const handleStoreChange = (field: keyof StoreDetails, value: string) => {
     setStoreDetails(prev => ({ ...prev, [field]: value }));
   };
+
 
   const handleDeliveryChange = (field: keyof DeliveryDetails, value: string) => {
     setDeliveryDetails(prev => ({ ...prev, [field]: value }));
@@ -109,8 +107,9 @@ export function CreateOrderPage() {
     }
 
     // --- Form Validation ---
-    if (!storeDetails.name || !storeDetails.postalCode) {
-      toast({ title: "Store Details Required", description: "Please enter store name and postal code.", variant: "destructive" });
+    // Validation for both store name and location
+    if (!storeDetails.name || !storeDetails.location) {
+      toast({ title: "Store Details Required", description: "Please enter both store name and location.", variant: "destructive" });
       return;
     }
     const validItems = items.filter(item => item.name.trim() !== '' && item.quantity > 0 && item.price >= 0);
@@ -118,12 +117,9 @@ export function CreateOrderPage() {
        toast({ title: "Valid Items Required", description: "Add at least one item with name, quantity > 0, and price >= 0.", variant: "destructive" });
        return;
     }
-    if (!useMeetingPoint && (!deliveryDetails.school || !deliveryDetails.building || !deliveryDetails.level || !deliveryDetails.roomNumber)) {
-      toast({ title: "Delivery Details Required", description: "Please fill in School, Building, Level, and Room Number.", variant: "destructive" });
-      return;
-    }
-     if (useMeetingPoint && !deliveryDetails.meetingPoint) {
-      toast({ title: "Meeting Point Required", description: "Please specify the alternate meeting point.", variant: "destructive" });
+    // Updated validation for further simplified delivery details
+    if (!deliveryDetails.schoolOrBuilding || !deliveryDetails.roomTypeAndNumber) {
+      toast({ title: "Delivery Details Required", description: "Please fill in Building/School and Room Type + Number.", variant: "destructive" });
       return;
     }
     // --- End Validation ---
@@ -138,13 +134,12 @@ export function CreateOrderPage() {
       // Calculate food fee
       const foodFee = validItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-      // Construct delivery location string
-      let deliveryLocationString = '';
-      if (useMeetingPoint && deliveryDetails.meetingPoint) {
-        deliveryLocationString = `Meeting Point: ${deliveryDetails.meetingPoint}`;
-      } else {
-        deliveryLocationString = `${deliveryDetails.school}, ${deliveryDetails.building}, Level ${deliveryDetails.level}, Room ${deliveryDetails.roomNumber}`;
+      // Construct delivery location string, appending instructions if they exist
+      let deliveryLocationString = `${deliveryDetails.schoolOrBuilding}, ${deliveryDetails.roomTypeAndNumber}`;
+      if (deliveryDetails.deliveryInstructions && deliveryDetails.deliveryInstructions.trim() !== '') {
+        deliveryLocationString += ` (Instructions: ${deliveryDetails.deliveryInstructions.trim()})`;
       }
+
 
       // Construct payload matching the structure expected by the /orders endpoint (based on curl example)
       const payload = {
@@ -155,13 +150,12 @@ export function CreateOrderPage() {
             quantity: item.quantity,
             price: item.price,
           })),
-          storeLocation: `${storeDetails.name} (${storeDetails.postalCode})`, // Add store location string
+          storeLocation: `${storeDetails.name} (${storeDetails.location})`, // Combine name and location
           deliveryLocation: deliveryLocationString,
           // Including fees here as they might be expected within order_details
           foodFee: foodFee,
           deliveryFee: Number(deliveryFee) || 0,
-          // Include instructions if needed by backend inside order_details
-          // instructions: instructions,
+          // deliveryInstructions removed as separate field, now part of deliveryLocation
         }
       };
 
@@ -229,6 +223,8 @@ export function CreateOrderPage() {
         <form onSubmit={onSubmit} className="space-y-6"> {/* Use onSubmit directly */}
 
           {/* Store Details Section */}
+          {/* Store Details Section (Simplified) */}
+          {/* Store Details Section (Name and Location) */}
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h2 className="text-lg font-semibold mb-4">Store Details</h2>
             <div className="space-y-4">
@@ -237,16 +233,16 @@ export function CreateOrderPage() {
                 <Input
                   value={storeDetails.name}
                   onChange={(e) => handleStoreChange('name', e.target.value)}
-                  placeholder="Enter exact store name"
+                  placeholder="e.g. Supergreen" // Placeholder for name
                   required
                 />
               </div>
               <div>
-                <Label>Postal Code</Label>
+                <Label>Store Location</Label> {/* Added Location Label */}
                 <Input
-                  value={storeDetails.postalCode}
-                  onChange={(e) => handleStoreChange('postalCode', e.target.value)}
-                  placeholder="Enter store postal code"
+                  value={storeDetails.location} // Added location value
+                  onChange={(e) => handleStoreChange('location', e.target.value)} // Added location onChange
+                  placeholder="e.g. Connexion, Koufu" // Placeholder for location
                   required
                 />
               </div>
@@ -339,98 +335,57 @@ export function CreateOrderPage() {
           </div>
 
           {/* Delivery Details Section (Input Fields) */}
+          {/* Delivery Details Section (Simplified) */}
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h2 className="text-lg font-semibold mb-4">Delivery Details</h2>
             <div className="space-y-4">
-              <div>
-                <Label>School/Campus</Label>
-                <div className="relative">
-                  <School className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                  <Input
-                    value={deliveryDetails.school}
-                    onChange={(e) => handleDeliveryChange('school', e.target.value)}
-                    placeholder="Enter school name"
-                    className="pl-10"
-                    required={!useMeetingPoint} // Required only if not using meeting point
-                  />
+              {/* Building/School and Room Type + Number side-by-side */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1"> {/* Takes up available space */}
+                  <Label>Building/School</Label>
+                  <div className="relative">
+                    <School className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <Input
+                      value={deliveryDetails.schoolOrBuilding}
+                      onChange={(e) => handleDeliveryChange('schoolOrBuilding', e.target.value)}
+                      placeholder="Enter building or school name"
+                      className="pl-10"
+                      required
+                    />
+                  </div>
                 </div>
-              </div>
-              <div>
-                <Label>Building Name</Label>
-                <div className="relative">
-                  <Building className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                  <Input
-                    value={deliveryDetails.building}
-                    onChange={(e) => handleDeliveryChange('building', e.target.value)}
-                    placeholder="Enter building name"
-                    className="pl-10"
-                    required={!useMeetingPoint}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Level/Floor</Label>
-                  <Input
-                    value={deliveryDetails.level}
-                    onChange={(e) => handleDeliveryChange('level', e.target.value)}
-                    placeholder="Enter level number"
-                    required={!useMeetingPoint} // Required only if not using meeting point
-                  />
-                </div>
-                <div>
-                  <Label>Room Number</Label>
+                <div className="sm:w-1/3"> {/* Adjust width as needed */}
+                  <Label>Room Type + Number</Label>
                   <div className="relative">
                     <DoorClosed className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
                     <Input
-                      value={deliveryDetails.roomNumber}
-                      onChange={(e) => handleDeliveryChange('roomNumber', e.target.value)}
-                      placeholder="Enter room number"
+                      value={deliveryDetails.roomTypeAndNumber}
+                      onChange={(e) => handleDeliveryChange('roomTypeAndNumber', e.target.value)}
+                      placeholder="e.g., SR 3-1" // Updated placeholder
                       className="pl-10"
-                      required={!useMeetingPoint}
+                      required
                     />
                   </div>
                 </div>
               </div>
-              <div className="border-t pt-4 mt-4">
-                <label className="flex items-center space-x-2 mb-4">
-                  <input
-                    type="checkbox"
-                    checked={useMeetingPoint}
-                    onChange={(e) => setUseMeetingPoint(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
-                  <span>Specify alternate meeting point</span>
-                </label>
-                {useMeetingPoint && (
-                  <div>
-                    <Label>Meeting Point</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                      <Input
-                        value={deliveryDetails.meetingPoint || ''}
-                        onChange={(e) => handleDeliveryChange('meetingPoint', e.target.value)}
-                        placeholder="e.g., Library Entrance, Canteen Bench"
-                        className="pl-10"
-                        required={useMeetingPoint} // Required only if checkbox is checked
-                      />
-                    </div>
-                  </div>
-                )}
+              {/* Delivery Instructions below */}
+              <div className="pt-2"> {/* Added slight padding top */}
+                <Label>Delivery Instructions</Label>
+                <Textarea
+                  value={deliveryDetails.deliveryInstructions || ''}
+                  onChange={(e) => handleDeliveryChange('deliveryInstructions', e.target.value)}
+                  placeholder="Drop-off at benches near the SR. Thank you!" // Placeholder as requested
+                  className="min-h-[80px]" // Slightly smaller height
+                  maxLength={100} // Added character limit
+                />
+                <p className="text-xs text-gray-500 mt-1 text-right">
+                  {`${deliveryDetails.deliveryInstructions?.length || 0} / 100 characters`}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Instructions Section */}
-          <div className="bg-white p-6 rounded-lg shadow-sm">
-            <h2 className="text-lg font-semibold mb-4">Special Instructions (Optional)</h2>
-            <Textarea
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              placeholder="Add any special instructions for the runner..."
-              className="min-h-[100px]"
-            />
-          </div>
+          {/* Special Instructions Section Removed */}
 
           {/* Submit Button */}
           <Button
