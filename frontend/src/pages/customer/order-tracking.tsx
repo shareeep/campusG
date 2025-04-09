@@ -4,7 +4,8 @@ import { Package, Truck, CheckCircle2, Loader2, User } from 'lucide-react'; // R
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { getOrder, confirmDelivery, cancelSaga } from '@/lib/api'; // Added cancelSaga import
-import { OrderLogs } from '@/components/order/order-logs';
+// OrderLogs component seems unused after merge, removing import
+// import { OrderLogs } from '@/components/order/order-logs';
 // import { useUser } from '@/lib/hooks/use-user'; // useUser might not be needed if userId comes from useAuth
 import { useAuth } from '@clerk/clerk-react'; // Import useAuth to get token and userId
 // Import ApiOrderResponse from types.ts
@@ -43,86 +44,110 @@ const mapApiStatus = (apiStatus: string): OrderStatus => {
 
 export function OrderTrackingPage() {
   const { orderId: routeOrderId } = useParams<{ orderId: string }>(); // Rename to avoid conflict
-  const { toast } = useToast();
+  const { toast } = useToast(); // Initialize toast for use with confirm/cancel
   const { userId, getToken, isLoaded: isAuthLoaded } = useAuth();
   // Use the API response type for state
   const [orderData, setOrderData] = useState<ApiOrderResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false); // Add state for cancel operation
+  // Combined state variables from both branches
+  const [isUpdating, setIsUpdating] = useState(false); // For confirm delivery
+  const [isCancelling, setIsCancelling] = useState(false); // For cancel order
+  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null); // For polling
 
-  useEffect(() => {
-    const fetchOrder = async () => {
-      if (!isAuthLoaded) return;
+  // Define fetchOrder outside useEffect so it can be called from handlers
+  const fetchOrder = async (currentIntervalId: NodeJS.Timeout | null) => { 
+    if (!isAuthLoaded) return;
 
-      if (!routeOrderId) { // Use renamed param
-        console.error("Order Tracking: No orderId found in URL params.");
-        setError("Order ID is missing.");
-        setIsLoading(false);
-        return;
-      }
+    if (!routeOrderId) { // Use renamed param
+      console.error("Order Tracking: No orderId found in URL params.");
+      setError("Order ID is missing.");
+      setIsLoading(false);
+      return;
+    }
 
-      if (!userId) {
-        if (isAuthLoaded) {
-           console.error("Order Tracking: User is not authenticated.");
-           setError("You must be logged in to view order details.");
-           setIsLoading(false);
-        }
-        return;
-      }
-
-      const token = await getToken();
-      if (!token) {
-        console.error("Order Tracking: Failed to get authentication token.");
-        setError("Authentication failed. Please try logging in again.");
-        setIsLoading(false);
-        return;
-      }
-
-      console.log(`[OrderTrackingPage] Fetching order ${routeOrderId} for user ${userId}`);
-      if (isLoading || error) {
-        setIsLoading(true);
-        setError(null);
-      }
-
-      try {
-        // getOrder now returns ApiOrderResponse | null
-        const fetchedData = await getOrder(routeOrderId, token);
-
-        if (fetchedData) {
-          console.log(`[OrderTrackingPage] Received order data for ${routeOrderId}:`, fetchedData);
-          setOrderData(fetchedData); // Set the raw API data
-          setError(null);
-        } else {
-          console.warn(`[OrderTrackingPage] getOrder returned null for ${routeOrderId}. Order might not exist or fetch failed.`);
-          if (!orderData) { // Check if we have *any* data yet
-             setError(`Could not load details for order #${routeOrderId}. It might not exist or there was a server issue.`);
-          }
-        }
-      } catch (err) {
-         console.error(`[OrderTrackingPage] Unexpected error fetching order ${routeOrderId}:`, err);
-         setError("An unexpected error occurred while loading the order.");
-      } finally {
+    if (!userId) {
+      if (isAuthLoaded) {
+         console.error("Order Tracking: User is not authenticated.");
+         setError("You must be logged in to view order details.");
          setIsLoading(false);
       }
-    };
+      return;
+    }
 
-    fetchOrder();
-    const intervalId = setInterval(fetchOrder, 10000);
+    const token = await getToken();
+    if (!token) {
+      console.error("Order Tracking: Failed to get authentication token.");
+      setError("Authentication failed. Please try logging in again.");
+      setIsLoading(false);
+      return;
+    }
 
+    console.log(`[OrderTrackingPage] Fetching order ${routeOrderId} for user ${userId}`);
+    if (isLoading || error) {
+      setIsLoading(true);
+      setError(null);
+    }
+
+    try {
+      // getOrder now returns ApiOrderResponse | null
+      const fetchedData = await getOrder(routeOrderId, token);
+
+      if (fetchedData) {
+        console.log(`[OrderTrackingPage] Received order data for ${routeOrderId}:`, fetchedData);
+        setOrderData(fetchedData); // Set the raw API data
+        setError(null);
+
+        // Stop polling if order is completed or cancelled
+        const finalStatuses = ['COMPLETED', 'CANCELLED'];
+        if (finalStatuses.includes(fetchedData.orderStatus.toUpperCase()) && currentIntervalId) {
+          console.log(`[OrderTrackingPage] Order reached final state (${fetchedData.orderStatus}). Stopping polling.`);
+          clearInterval(currentIntervalId);
+          setIntervalId(null); // Clear intervalId from state
+        }
+      } else {
+        console.warn(`[OrderTrackingPage] getOrder returned null for ${routeOrderId}. Order might not exist or fetch failed.`);
+        if (!orderData) { // Check if we have *any* data yet
+           setError(`Could not load details for order #${routeOrderId}. It might not exist or there was a server issue.`);
+        }
+      }
+    } catch (err) {
+       console.error(`[OrderTrackingPage] Unexpected error fetching order ${routeOrderId}:`, err);
+       setError("An unexpected error occurred while loading the order.");
+    } finally {
+       setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Initial fetch when component mounts or dependencies change
+    fetchOrder(intervalId); // Pass current intervalId
+
+    // Start polling only if intervalId is not already set
+    if (!intervalId) {
+      console.log("[OrderTrackingPage] Starting polling...");
+      const newIntervalId = setInterval(() => fetchOrder(newIntervalId), 5000); // Poll every 5 seconds
+      setIntervalId(newIntervalId); // Store the new interval ID
+    }
+
+    // Cleanup function: Clear interval when component unmounts or dependencies change
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      if (intervalId) {
+        clearInterval(intervalId);
+        console.log("[OrderTrackingPage] Cleanup: Cleared interval polling.");
+      }
     };
-  }, [routeOrderId, userId, getToken, isAuthLoaded]); // Dependencies are correct now
+    // Dependencies: Fetch when route/user changes, or auth loads.
+    // Include intervalId to ensure cleanup works correctly if it changes.
+  }, [routeOrderId, userId, getToken, isAuthLoaded, intervalId]);
 
   // Handler for cancelling an order
   const handleCancelOrder = async () => {
     if (!orderData || !orderData.sagaId || !userId) {
-       toast({ 
-         title: "Error", 
-         description: "Cannot cancel order. Missing saga ID or user info.", 
-         variant: "destructive" 
+       toast({
+         title: "Error",
+         description: "Cannot cancel order. Missing saga ID or user info.",
+         variant: "destructive"
        });
        return;
     }
@@ -130,6 +155,9 @@ export function OrderTrackingPage() {
     setIsCancelling(true);
     try {
       const token = await getToken();
+      if (!token) throw new Error("Authentication token not available.");
+      
+      // Using cancelSaga which returns {success: boolean, message: string}
       const result = await cancelSaga(orderData.sagaId, token);
       
       if (result.success) {
@@ -138,9 +166,8 @@ export function OrderTrackingPage() {
           description: result.message || "Your order cancellation has been initiated.",
         });
         
-        // Refetch order details after cancellation request
-        const updatedData = await getOrder(orderData.orderId, token);
-        setOrderData(updatedData); // Update with new data which should reflect cancellation status
+        // Refetch order details immediately to reflect status change
+        await fetchOrder(intervalId);
       } else {
         toast({
           title: "Cancellation Failed",
@@ -150,6 +177,7 @@ export function OrderTrackingPage() {
       }
     } catch (error) {
        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+       console.error("Error cancelling order:", error);
        toast({
          title: "Error Cancelling Order",
          description: `Failed to cancel order: ${errorMessage}. Please try again.`,
@@ -160,42 +188,45 @@ export function OrderTrackingPage() {
     }
   };
 
+  // Handler for confirming delivery
   const handleConfirmDelivery = async () => {
     // Use orderData (API response)
     if (!orderData || !userId) {
-       toast({ title: "Error", description: "Cannot confirm delivery. Missing order or user info.", variant: "destructive" });
+       toast({ 
+         title: "Error", 
+         description: "Cannot confirm delivery. Missing order or user info.", 
+         variant: "destructive" 
+       });
        return;
     }
 
     setIsUpdating(true);
     try {
-      // confirmDelivery likely expects the internal order_id (which is the same as API's orderId)
+      const token = await getToken();
+      if (!token) throw new Error("Authentication token not available.");
+      
+      // Call the confirmDelivery API function - note it expects orderId, userId, and role
       await confirmDelivery(orderData.orderId, userId, 'customer');
-
+      
       toast({
         title: "Delivery Confirmed",
-        // Confirmation status might not be directly available in ApiOrderResponse, adjust message
-        description: "Delivery confirmed. Waiting for runner if needed.",
-        // description: orderData.runner_confirmation === 'confirmed' // This field might not exist
-        //   ? "Order completed! Payment has been released to the runner."
-        //   : "Waiting for runner to confirm delivery.",
+        description: "You have confirmed the delivery.",
       });
-
-      // Refetch order details after confirmation
-      const token = await getToken();
-      const updatedData = await getOrder(orderData.orderId, token);
-      setOrderData(updatedData); // Update with new raw data
+      
+      // Fetch updated order details immediately
+      await fetchOrder(intervalId);
     } catch (error) {
-       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-       toast({
-         title: "Error Confirming Delivery",
-         description: `Failed to confirm delivery: ${errorMessage}. Please try again.`,
-         variant: "destructive"
-       });
-     } finally {
-       setIsUpdating(false);
-     }
-   };
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+      console.error("Error confirming delivery:", error);
+      toast({
+        title: "Error Confirming Delivery",
+        description: `Failed to confirm delivery: ${errorMessage}. Please try again.`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   // --- Render Logic ---
 
@@ -232,25 +263,45 @@ export function OrderTrackingPage() {
     const total = (orderData.foodFee || 0) + (orderData.deliveryFee || 0);
 
     // --- Adapt Steps Logic ---
-    const getStatusTime = (targetStatus: OrderStatus): string | null => {
-      // Use API timestamps based on current mapped status
-      if (targetStatus === 'created') return orderData.createdAt || null;
 
-      // For subsequent steps, use updatedAt if the current status is at or beyond the target status
-      const statusHierarchy: OrderStatus[] = ['created', 'runner_assigned', 'order_placed', 'picked_up', 'delivered', 'completed', 'reviewed'];
-      const currentIndex = statusHierarchy.indexOf(currentStatus);
-      const targetIndex = statusHierarchy.indexOf(targetStatus);
-
-      if (currentIndex >= targetIndex) {
-        return orderData.updatedAt || null; // Use updatedAt as approximation
-      }
-      return null;
-    };
-
-    // Define the sequence of statuses
-    const statusHierarchy: OrderStatus[] = ['created', 'runner_assigned', 'order_placed', 'picked_up', 'delivered', 'completed', 'reviewed'];
+    // Correct statusHierarchy using OrderStatus type values
+    const statusHierarchy: OrderStatus[] = [
+      'created',
+      'runner_assigned',
+      'order_placed',
+      'picked_up',
+      'delivered',
+      'completed' // Added 'completed' to the hierarchy
+      // 'reviewed' // Not typically shown as a mandatory step in this kind of timeline
+    ];
+    
+    // Calculate currentStatusIndex using the mapped status
     const currentStatusIndex = statusHierarchy.indexOf(currentStatus);
 
+    const getStatusTime = (targetStatus: OrderStatus): string | null => {
+      // Use specific timestamps if available, otherwise fallback or return null
+      switch (targetStatus) {
+        case 'created':
+          return orderData.createdAt || null;
+        case 'runner_assigned': // Maps to ACCEPTED status
+          // Assuming the backend response now includes 'acceptedAt'
+          return orderData.acceptedAt || null; 
+        case 'order_placed': // Maps to PLACED status
+          return orderData.placedAt || null;
+        case 'picked_up': // Maps to ON_THE_WAY status
+          return orderData.pickedUpAt || null;
+        case 'delivered': // Maps to DELIVERED status
+          return orderData.deliveredAt || null;
+        case 'completed': // Maps to COMPLETED status
+          return orderData.completedAt || null;
+        // Add cases for other statuses like 'cancelled' if needed on the timeline
+        default:
+          // Fallback for statuses without specific timestamps or if data is missing
+          return null; 
+      }
+    };
+
+    // Define the steps for the timeline
     const steps = [
       {
         title: 'Order Created',
@@ -288,12 +339,6 @@ export function OrderTrackingPage() {
         title: 'Order Delivered',
         // Confirmation status might not be available, simplify description
         description: 'Order marked as delivered',
-        // description: (
-        //   <div className="space-y-1">
-        //     <p>Customer: {orderData.customer_confirmation === 'confirmed' ? '✓ Confirmed' : 'Pending'}</p>
-        //     <p>Runner: {orderData.runner_confirmation === 'confirmed' ? '✓ Confirmed' : 'Pending'}</p>
-        //   </div>
-        // ),
         icon: CheckCircle2,
         status: currentStatus === 'completed' || currentStatus === 'delivered' ? 'completed' : 'pending',
         time: getStatusTime('delivered')
@@ -351,9 +396,6 @@ export function OrderTrackingPage() {
                   </div>
                 </div>
 
-                {/* Instructions might not be available */}
-                {/* {orderData.instructions && ( ... )} */}
-
                 {/* Runner Info - Use runnerId if available */}
                 {orderData.runnerId && (
                   <div className="pt-4 border-t">
@@ -369,8 +411,6 @@ export function OrderTrackingPage() {
                           Runner ID: {orderData.runnerId.substring(0, 8)}...
                         </Link>
                       </div>
-                      {/* Contact info might not be available */}
-                      {/* <a href={`https://t.me/${orderData.customer_telegram}`} ...> ... </a> */}
                     </div>
                   </div>
                 )}
@@ -410,8 +450,9 @@ export function OrderTrackingPage() {
               </div>
             </div>
 
-            {/* Cancel Order Button - Only show when status is CREATED and sagaId exists */}
-            {orderData.orderStatus === 'CREATED' && orderData.sagaId && (
+            {/* Cancel Order Button - Only show when status is CREATED or PENDING and sagaId exists */}
+            {(orderData.orderStatus.toUpperCase() === 'CREATED' || orderData.orderStatus.toUpperCase() === 'PENDING') && 
+             orderData.sagaId && (
               <div className="mt-8 pt-6 border-t">
                 <Button 
                   onClick={handleCancelOrder} 
@@ -426,17 +467,13 @@ export function OrderTrackingPage() {
                   )}
                 </Button>
                 <p className="text-sm text-gray-600 text-center mt-2">
-                  You can only cancel before a runner accepts your order
+                  You can only cancel before a runner accepts your order.
                 </p>
               </div>
             )}
             
-            {/* Confirm Delivery Button - Logic might need adjustment based on available data */}
-            {/* Show button if status allows confirmation (e.g., 'DELIVERED' or 'PICKED_UP' from API) */}
-            {/* Confirmation status check might need removal if not in API response */}
-            {(orderData.orderStatus === 'PICKED_UP' || orderData.orderStatus === 'DELIVERED') &&
-             // orderData.customer_confirmation !== 'confirmed' && // Remove if confirmation status not available
-             (
+            {/* Confirm Delivery Button - Show when status is PICKED_UP or DELIVERED */}
+            {(orderData.orderStatus.toUpperCase() === 'PICKED_UP' || orderData.orderStatus.toUpperCase() === 'DELIVERED') && (
               <div className="mt-8 pt-6 border-t">
                 <Button onClick={handleConfirmDelivery} className="w-full" disabled={isUpdating}>
                   {isUpdating ? (
@@ -444,13 +481,10 @@ export function OrderTrackingPage() {
                   ) : ( 'Confirm Order Received' )}
                 </Button>
                 <p className="text-sm text-gray-600 text-center mt-2">
-                  Click when you've received your order
+                  Click when you've received your order.
                 </p>
               </div>
             )}
-
-            {/* Use orderData.orderId */}
-            <OrderLogs orderId={orderData.orderId} />
           </div>
         </div>
       </div>
