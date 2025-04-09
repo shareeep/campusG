@@ -128,9 +128,16 @@ export function ActiveOrdersPage() {
         throw new Error(result.error || `Failed to update status to ${nextStatus}`);
       }
 
+      // Format status for display (replace underscore, capitalize words)
+      const formattedStatus = nextStatus
+        .toLowerCase()
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+
       toast({
         title: "Order Updated",
-        description: `Order status updated to ${nextStatus.replace('_', ' ')}`,
+        description: `Order status updated to ${formattedStatus}`,
       });
       // Refresh local state optimistically or re-fetch
       setAllOrders(prevOrders =>
@@ -154,8 +161,8 @@ export function ActiveOrdersPage() {
 
      try {
         const token = await getToken();
-        // Call the Complete Order Saga Orchestrator
-        const response = await fetch('http://localhost:3103/updateOrderStatus', { // Saga endpoint
+        // Call the Complete Order Saga Orchestrator's correct endpoint
+        const response = await fetch('http://localhost:3103/triggerCompleteOrderWorkflow', { // Correct Saga endpoint
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -173,9 +180,13 @@ export function ActiveOrdersPage() {
             title: "Completion Initiated",
             description: `Order completion process started for order ${order.orderId.substring(0, 8)}...`,
         });
-        // Optionally update local state to reflect pending completion or re-fetch
-        // For now, we just show the toast and wait for backend updates
-        // Consider disabling the button after successful initiation
+
+        // Wait 2 seconds then switch to the completed orders view
+        setTimeout(() => {
+          setShowCompleted(true);
+          // Optionally re-fetch orders here if needed immediately after switching view
+          // fetchOrders(); 
+        }, 2000); // 2000 milliseconds = 2 seconds
 
      } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to initiate order completion.';
@@ -306,8 +317,12 @@ export function ActiveOrdersPage() {
                     {order.orderStatus === 'ON_THE_WAY' && (
                       <Clock className="h-4 w-4 inline-block mr-1" />
                     )}
-                    {order.orderStatus.replace('_', ' ').charAt(0).toUpperCase() +
-                     order.orderStatus.replace('_', ' ').slice(1).toLowerCase()}
+                    {/* Format status for display */}
+                    {order.orderStatus
+                      .toLowerCase()
+                      .split('_')
+                      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                      .join(' ')}
                   </div>
                 </div>
 

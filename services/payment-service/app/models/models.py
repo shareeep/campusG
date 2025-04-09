@@ -39,8 +39,9 @@ class Payment(db.Model):
     description = db.Column(db.String(255), nullable=True)
 
     # Timestamps
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    # Use db.func.now() for database-generated timestamps
+    created_at = db.Column(db.DateTime, nullable=False, default=db.func.now())
+    updated_at = db.Column(db.DateTime, nullable=False, default=db.func.now(), onupdate=db.func.now())
 
     def __repr__(self):
         return f"<Payment {self.id} for order {self.order_id}>"

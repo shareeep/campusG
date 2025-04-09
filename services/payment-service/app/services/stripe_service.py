@@ -432,7 +432,12 @@ class StripeService:
             payment.runner_id = runner_id
             payment.status = PaymentStatus.SUCCEEDED
             payment.transfer_id = transfer.id
-            payment.updated_at = datetime.now(timezone.utc)
+            # updated_at is handled by db.func.now() onupdate
+            # payment.updated_at = datetime.now(timezone.utc) 
+            
+            # *** ADDED LOGGING ***
+            logger.info(f"Attempting to commit payment {payment_id} update: status={payment.status.value}, runner_id='{payment.runner_id}', transfer_id='{payment.transfer_id}'")
+            
             db.session.commit()
             
             logger.info(f"Successfully released payment {payment_id} to runner {runner_id}, transfer: {transfer.id}")
@@ -452,8 +457,14 @@ class StripeService:
                 logger.warning(f"Payment {payment_id} capture succeeded but transfer to Connect account failed due to account not being activated. This is expected in test environments.")
                 
                 # Update payment status to SUCCEEDED even though transfer failed
+                payment.runner_id = runner_id # Ensure runner_id is set here too
                 payment.status = PaymentStatus.SUCCEEDED
-                payment.updated_at = datetime.now(timezone.utc)
+                # updated_at is handled by db.func.now() onupdate
+                # payment.updated_at = datetime.now(timezone.utc)
+                
+                # *** ADDED LOGGING ***
+                logger.info(f"Attempting to commit payment {payment_id} update (transfer failed): status={payment.status.value}, runner_id='{payment.runner_id}'")
+                
                 db.session.commit()
                 
                 return {

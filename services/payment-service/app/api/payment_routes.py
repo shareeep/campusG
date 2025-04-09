@@ -103,12 +103,12 @@ def get_payment_history(user_id):
         ).order_by(Payment.created_at.desc()).all()
 
         # Query for money earned (user is the runner)
-        # Include only SUCCEEDED payments where a transfer occurred
+        # Include only SUCCEEDED payments (assuming this status means payout was successful)
         earned_payments = Payment.query.filter(
             Payment.runner_id == user_id,
-            Payment.status == PaymentStatus.SUCCEEDED,
-            Payment.transfer_id.isnot(None) # Ensure payout transfer happened
-        ).order_by(Payment.created_at.desc()).all() # Still fetch all to calculate sum easily
+            Payment.status == PaymentStatus.SUCCEEDED
+            # Removed check for transfer_id.isnot(None) as SUCCEEDED should be sufficient
+        ).order_by(Payment.created_at.desc()).all()
 
         # Get counts
         spent_count = len(spent_payments)
