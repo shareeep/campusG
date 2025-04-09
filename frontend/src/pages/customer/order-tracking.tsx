@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Added useCallback
 import { useParams, Link } from 'react-router-dom';
-import { Package, Truck, CheckCircle2, Loader2, User, Ban } from 'lucide-react'; // Added Ban for cancel button
+import { Package, Truck, CheckCircle2, Loader2, User, Ban, LucideIcon } from 'lucide-react'; // Added Ban for cancel button, LucideIcon
 import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/use-toast';
-import { getOrder, confirmDelivery, cancelSaga } from '@/lib/api'; // Added cancelSaga import
-// OrderLogs component seems unused after merge, removing import
-// import { OrderLogs } from '@/components/order/order-logs';
+import { useToast } from '@/components/ui/use-toast'; // Re-added useToast
+import { getOrder, cancelSaga } from '@/lib/api'; // Removed unused confirmDelivery import, Added cancelSaga import
+// import { OrderLogs } from '@/components/order/order-logs'; // Removed unused import
 // import { useUser } from '@/lib/hooks/use-user'; // useUser might not be needed if userId comes from useAuth
 import { useAuth } from '@clerk/clerk-react'; // Import useAuth to get token and userId
 // Import ApiOrderResponse from types.ts
@@ -35,30 +34,45 @@ const parseOrderItems = (description: string): OrderItem[] => {
   }
 };
 
-// Helper to map API status string to frontend OrderStatus type
+// Helper to map API status string to frontend OrderStatus type used in hierarchy
 const mapApiStatus = (apiStatus: string): OrderStatus => {
-  return apiStatus.toLowerCase() as OrderStatus; // Simple lowercase mapping for now
-  // Add more robust mapping if API uses different terms (e.g., PENDING -> created)
+  const lowerStatus = apiStatus.toLowerCase();
+  switch (lowerStatus) {
+    // Map API statuses (like PENDING, ACCEPTED, ON_THE_WAY)
+    // to the corresponding OrderStatus type values used in statusHierarchy
+    case 'pending': return 'created'; // Treat PENDING as the initial state for the timeline
+    case 'created': return 'created';
+    case 'accepted': return 'runner_assigned';
+    case 'placed': return 'order_placed';
+    case 'on_the_way': return 'picked_up'; // Map API's ON_THE_WAY to internal 'picked_up'
+    case 'delivered': return 'delivered';
+    case 'completed': return 'completed';
+    // Add 'cancelled' if it needs representation in the hierarchy/timeline logic
+    // case 'cancelled': return 'cancelled';
+    default:
+      console.warn(`Unknown API status received: ${apiStatus}`);
+      return 'created'; // Fallback to initial state
+  }
 };
 
 
 export function OrderTrackingPage() {
   const { orderId: routeOrderId } = useParams<{ orderId: string }>(); // Rename to avoid conflict
-  const { toast } = useToast(); // Initialize toast for use with confirm/cancel
+  const { toast } = useToast(); // Re-added toast
   const { userId, getToken, isLoaded: isAuthLoaded } = useAuth();
   // Use the API response type for state
   const [orderData, setOrderData] = useState<ApiOrderResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Combined state variables from both branches
-  const [isUpdating, setIsUpdating] = useState(false); // For confirm delivery
+  // Removed unused isUpdating state
   const [isCancelling, setIsCancelling] = useState(false); // For cancel order
-  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null); // For polling
+  // Store interval ID in state or ref to clear it from within fetchOrder
+  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
 
-  // Define fetchOrder outside useEffect so it can be called from handlers
-  const fetchOrder = async (currentIntervalId: NodeJS.Timeout | null) => { 
-    if (!isAuthLoaded) return;
-
+  // Define fetchOrder using useCallback to stabilize its reference
+  const fetchOrder = useCallback(async (currentIntervalId: NodeJS.Timeout | null) => {
+     if (!isAuthLoaded) return;
     if (!routeOrderId) { // Use renamed param
       console.error("Order Tracking: No orderId found in URL params.");
       setError("Order ID is missing.");
@@ -117,29 +131,26 @@ export function OrderTrackingPage() {
     } finally {
        setIsLoading(false);
     }
-  };
+  }, [isAuthLoaded, routeOrderId, userId, getToken, isLoading, error, orderData]); // Added dependencies for useCallback
 
   useEffect(() => {
-    // Initial fetch when component mounts or dependencies change
+    // Initial fetch
     fetchOrder(intervalId); // Pass current intervalId
 
     // Start polling only if intervalId is not already set
     if (!intervalId) {
-      console.log("[OrderTrackingPage] Starting polling...");
       const newIntervalId = setInterval(() => fetchOrder(newIntervalId), 5000); // Poll every 5 seconds
       setIntervalId(newIntervalId); // Store the new interval ID
     }
-
-    // Cleanup function: Clear interval when component unmounts or dependencies change
+    // Cleanup function
     return () => {
       if (intervalId) {
         clearInterval(intervalId);
         console.log("[OrderTrackingPage] Cleanup: Cleared interval polling.");
       }
     };
-    // Dependencies: Fetch when route/user changes, or auth loads.
-    // Include intervalId to ensure cleanup works correctly if it changes.
-  }, [routeOrderId, userId, getToken, isAuthLoaded, intervalId]);
+    // Add intervalId and fetchOrder to dependency array
+  }, [routeOrderId, userId, getToken, isAuthLoaded, intervalId, fetchOrder]);
 
   // Handler for cancelling an order
   const handleCancelOrder = async () => {
@@ -188,45 +199,7 @@ export function OrderTrackingPage() {
     }
   };
 
-  // Handler for confirming delivery
-  const handleConfirmDelivery = async () => {
-    // Use orderData (API response)
-    if (!orderData || !userId) {
-       toast({ 
-         title: "Error", 
-         description: "Cannot confirm delivery. Missing order or user info.", 
-         variant: "destructive" 
-       });
-       return;
-    }
-
-    setIsUpdating(true);
-    try {
-      const token = await getToken();
-      if (!token) throw new Error("Authentication token not available.");
-      
-      // Call the confirmDelivery API function - note it expects orderId, userId, and role
-      await confirmDelivery(orderData.orderId, userId, 'customer');
-      
-      toast({
-        title: "Delivery Confirmed",
-        description: "You have confirmed the delivery.",
-      });
-      
-      // Fetch updated order details immediately
-      await fetchOrder(intervalId);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      console.error("Error confirming delivery:", error);
-      toast({
-        title: "Error Confirming Delivery",
-        description: `Failed to confirm delivery: ${errorMessage}. Please try again.`,
-        variant: "destructive",
-      });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
+  // Removed unused handleConfirmDelivery function
 
   // --- Render Logic ---
 
@@ -274,9 +247,10 @@ export function OrderTrackingPage() {
       'completed' // Added 'completed' to the hierarchy
       // 'reviewed' // Not typically shown as a mandatory step in this kind of timeline
     ];
-    
+
     // Calculate currentStatusIndex using the mapped status
-    const currentStatusIndex = statusHierarchy.indexOf(currentStatus);
+    // const currentStatus = mapApiStatus(orderData.orderStatus); // Remove duplicate declaration
+    const currentStatusIndex = statusHierarchy.indexOf(currentStatus); // Use the existing currentStatus variable declared earlier
 
     const getStatusTime = (targetStatus: OrderStatus): string | null => {
       // Use specific timestamps if available, otherwise fallback or return null
@@ -285,7 +259,7 @@ export function OrderTrackingPage() {
           return orderData.createdAt || null;
         case 'runner_assigned': // Maps to ACCEPTED status
           // Assuming the backend response now includes 'acceptedAt'
-          return orderData.acceptedAt || null; 
+          return orderData.acceptedAt || null;
         case 'order_placed': // Maps to PLACED status
           return orderData.placedAt || null;
         case 'picked_up': // Maps to ON_THE_WAY status
@@ -297,12 +271,23 @@ export function OrderTrackingPage() {
         // Add cases for other statuses like 'cancelled' if needed on the timeline
         default:
           // Fallback for statuses without specific timestamps or if data is missing
-          return null; 
+          // Could return updatedAt if the step is completed, but null is cleaner
+          // if (isStepCompleted(targetStatus)) { // Need a helper function isStepCompleted
+          //   return orderData.updatedAt || null;
+          // }
+          return null;
       }
     };
 
-    // Define the steps for the timeline
-    const steps = [
+    // Define the steps for the timeline - Add explicit type
+    interface TimelineStep {
+      title: string;
+      description: string;
+      icon: LucideIcon; // Use LucideIcon type
+      status: 'completed' | 'pending';
+      time: string | null;
+    }
+    const steps: TimelineStep[] = [
       {
         title: 'Order Created',
         description: 'Your order has been created',
@@ -312,8 +297,8 @@ export function OrderTrackingPage() {
         time: getStatusTime('created')
       },
       {
-        title: 'Runner Assigned',
-        description: orderData.runnerId ? `Runner ${orderData.runnerId.substring(0, 6)}... assigned` : 'Waiting for runner',
+        title: 'Runner Accepted', // Changed title
+        description: orderData.runnerId ? `Runner ${orderData.runnerId.substring(0, 6)}... accepted` : 'Waiting for runner', // Changed description
         icon: User,
         // Completed if current status is 'runner_assigned' or beyond
         status: currentStatusIndex >= statusHierarchy.indexOf('runner_assigned') ? 'completed' : 'pending',
@@ -338,10 +323,23 @@ export function OrderTrackingPage() {
       {
         title: 'Order Delivered',
         // Confirmation status might not be available, simplify description
-        description: 'Order marked as delivered',
-        icon: CheckCircle2,
-        status: currentStatus === 'completed' || currentStatus === 'delivered' ? 'completed' : 'pending',
+        // description: 'Order marked as delivered',
+        // icon: CheckCircle2,
+        // status: currentStatus === 'completed' || currentStatus === 'delivered' ? 'completed' : 'pending',
+        // time: getStatusTime('delivered')
+        // Removed confirmation status logic
+        description: 'Order has been delivered',
+        icon: CheckCircle2, // Add missing icon property
+        // Make consistent with index check
+        status: currentStatusIndex >= statusHierarchy.indexOf('delivered') ? 'completed' : 'pending',
         time: getStatusTime('delivered')
+      },
+      { // Add the 'completed' step
+        title: 'Order Completed',
+        description: 'Your order is complete',
+        icon: CheckCircle2,
+        status: currentStatusIndex >= statusHierarchy.indexOf('completed') ? 'completed' : 'pending',
+        time: getStatusTime('completed') // Reverted: Show completed time regardless of delivered time
       }
     ];
 
@@ -419,6 +417,7 @@ export function OrderTrackingPage() {
 
             {/* Order Timeline - Uses adapted steps */}
             <div className="mb-6">
+              {/* Format the displayed order status */}
               <h2 className="text-lg font-semibold mb-4">
                 Order Status: {orderData.orderStatus
                                 .toLowerCase()
@@ -457,12 +456,12 @@ export function OrderTrackingPage() {
             </div>
 
             {/* Cancel Order Button - Only show when status is CREATED or PENDING and sagaId exists */}
-            {(orderData.orderStatus.toUpperCase() === 'CREATED' || orderData.orderStatus.toUpperCase() === 'PENDING') && 
+            {(orderData.orderStatus.toUpperCase() === 'CREATED' || orderData.orderStatus.toUpperCase() === 'PENDING') &&
              orderData.sagaId && (
               <div className="mt-8 pt-6 border-t">
-                <Button 
-                  onClick={handleCancelOrder} 
-                  className="w-full bg-red-600 hover:bg-red-700 text-white" 
+                <Button
+                  onClick={handleCancelOrder}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white"
                   variant="secondary"
                   disabled={isCancelling}
                 >
@@ -477,20 +476,9 @@ export function OrderTrackingPage() {
                 </p>
               </div>
             )}
-            
-            {/* Confirm Delivery Button - Show when status is PICKED_UP or DELIVERED */}
-            {(orderData.orderStatus.toUpperCase() === 'PICKED_UP' || orderData.orderStatus.toUpperCase() === 'DELIVERED') && (
-              <div className="mt-8 pt-6 border-t">
-                <Button onClick={handleConfirmDelivery} className="w-full" disabled={isUpdating}>
-                  {isUpdating ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Confirming...</>
-                  ) : ( 'Confirm Order Received' )}
-                </Button>
-                <p className="text-sm text-gray-600 text-center mt-2">
-                  Click when you've received your order.
-                </p>
-              </div>
-            )}
+
+            {/* Confirm Delivery Button Removed */}
+            {/* OrderLogs component removed */}
           </div>
         </div>
       </div>

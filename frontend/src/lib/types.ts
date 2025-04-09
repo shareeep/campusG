@@ -136,15 +136,15 @@ export interface ApiOrderResponse {
   sagaId: string | null;
   createdAt: string;
   updatedAt: string;
-  completedAt: string | null;
-  // Additional timestamps that might be present in the API response
+  // Add new optional timestamp fields from backend
   acceptedAt?: string | null;
   placedAt?: string | null;
   pickedUpAt?: string | null;
   deliveredAt?: string | null;
-  // Other potential fields from the actual API response
-  instructions?: string;
-  runner_name?: string;
+  completedAt: string | null;
+  cancelledAt?: string | null;
+  // Add other potential fields from the actual API response if needed
+  // e.g., instructions?: string; runner_name?: string; etc.
 }
 
 // Add other API-specific response types here if needed

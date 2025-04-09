@@ -29,12 +29,18 @@ class Order(db.Model):
     delivery_location = db.Column(db.String(255), nullable=False)
     order_status = db.Column(SQLAlchemyEnum(OrderStatus, native_enum=False), nullable=False, default=OrderStatus.PENDING, index=True)
     saga_id = db.Column(db.String(36), nullable=True, index=True) # Added saga_id column
-    # Use db.func.now() to ensure the database sets the timestamp at the time of creation/update
-    created_at = db.Column(db.DateTime, nullable=False, default=db.func.now())
-    updated_at = db.Column(db.DateTime, nullable=False, default=db.func.now(), onupdate=db.func.now())
-    completed_at = db.Column(db.DateTime, nullable=True)
-
-    def __repr__(self):
+     # Use db.func.now() to ensure the database sets the timestamp at the time of creation/update
+    created_at = db.Column(db.DateTime, nullable=False, default=db.func.now()) # Corrected indent
+    updated_at = db.Column(db.DateTime, nullable=False, default=db.func.now(), onupdate=db.func.now()) # Corrected indent
+    # Timestamps for specific status changes
+    accepted_at = db.Column(db.DateTime, nullable=True) # Corrected indent
+    placed_at = db.Column(db.DateTime, nullable=True) # Corrected indent
+    picked_up_at = db.Column(db.DateTime, nullable=True) # Corresponds to ON_THE_WAY # Corrected indent
+    delivered_at = db.Column(db.DateTime, nullable=True) # Corrected indent
+    completed_at = db.Column(db.DateTime, nullable=True) # Corrected indent
+    cancelled_at = db.Column(db.DateTime, nullable=True) # Added for cancelled status # Corrected indent
+ 
+    def __repr__(self): # Corrected indent
         return f"<Order {self.order_id}>"
 
     def to_dict(self):
@@ -48,9 +54,15 @@ class Order(db.Model):
             'deliveryFee': float(self.delivery_fee),
             'storeLocation': self.store_location, # Added store location
             'deliveryLocation': self.delivery_location,
-            'orderStatus': self.order_status.name,
-            'sagaId': self.saga_id, # Added saga_id to dict representation
-            'createdAt': self.created_at.isoformat(),
-            'updatedAt': self.updated_at.isoformat(),
-            'completedAt': self.completed_at.isoformat() if self.completed_at else None
-        }
+             'orderStatus': self.order_status.name,
+             'sagaId': self.saga_id,
+             'createdAt': self.created_at.isoformat() if self.created_at else None,
+             'updatedAt': self.updated_at.isoformat() if self.updated_at else None,
+             # Add new timestamps to dict, handling None values
+             'acceptedAt': self.accepted_at.isoformat() if self.accepted_at else None,
+             'placedAt': self.placed_at.isoformat() if self.placed_at else None,
+             'pickedUpAt': self.picked_up_at.isoformat() if self.picked_up_at else None,
+             'deliveredAt': self.delivered_at.isoformat() if self.delivered_at else None,
+             'completedAt': self.completed_at.isoformat() if self.completed_at else None,
+             'cancelledAt': self.cancelled_at.isoformat() if self.cancelled_at else None
+         }

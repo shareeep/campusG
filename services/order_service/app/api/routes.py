@@ -38,7 +38,7 @@ def get_orders():
             except KeyError:
                 # Handle invalid status gracefully, maybe return empty or error
                 return jsonify({'error': f'Invalid status value: {status_filter}'}), 400
-        
+
         # Apply runnerId filter if provided
         if runner_id_filter:
             query = query.filter(Order.runner_id == runner_id_filter)
@@ -53,7 +53,7 @@ def get_orders():
             'page': page
             # Removed duplicate/incorrect 'total' and 'pages' keys referencing 'orders'
         }
-        
+
         return jsonify(result), 200
     except Exception as e:
         current_app.logger.error(f"Error getting orders: {str(e)}")
@@ -65,15 +65,15 @@ def get_order_details():
     """Get a specific order by ID"""
     try:
         order_id = request.args.get('orderId')
-        
+
         if not order_id:
             return jsonify({'error': 'Missing orderId parameter'}), 400
-            
+
         order = Order.query.get(order_id)
-        
+
         if not order:
             return jsonify({'error': 'Order not found'}), 404
-            
+
         return jsonify(order.to_dict()), 200
     except Exception as e:
         current_app.logger.error(f"Error getting order {order_id}: {str(e)}")
@@ -86,18 +86,18 @@ def get_customer_orders(customer_id):
     try:
         page = request.args.get('page', 1, type=int)
         limit = request.args.get('limit', 10, type=int)
-        
+
         # Query orders filtering by customer_id and paginate
         orders_query = Order.query.filter_by(cust_id=customer_id).order_by(Order.created_at.desc())
         orders_paginated = orders_query.paginate(page=page, per_page=limit, error_out=False) # error_out=False prevents 404 on empty pages
-        
+
         result = {
             'items': [order.to_dict() for order in orders_paginated.items],
             'total': orders_paginated.total,
             'pages': orders_paginated.pages,
             'page': page
         }
-        
+
         return jsonify(result), 200
     except Exception as e:
         current_app.logger.error(f"Error getting orders for customer {customer_id}: {str(e)}")
@@ -110,33 +110,33 @@ def create_order():
     """Create a new order - simple CRUD without saga orchestration"""
     try:
         data = request.json
-        
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-            
+
         customer_id = data.get('customer_id')
         order_details = data.get('order_details')
-        
+
         if not customer_id or not order_details:
             return jsonify({'error': 'Missing required fields: customer_id or order_details'}), 400
-        
+
         # Calculate amounts and get locations
         food_items = order_details.get('foodItems', [])
         store_location = order_details.get('storeLocation', None) # Get store location
         delivery_location = order_details.get('deliveryLocation', '')
-        
+
         food_fee = calculate_food_total(food_items)
         # Use deliveryFee from input if provided, otherwise default or calculate (adjust logic as needed)
         # Assuming order_details contains 'deliveryFee' from the saga payload
-        input_delivery_fee = order_details.get('deliveryFee', None) 
+        input_delivery_fee = order_details.get('deliveryFee', None)
         # Convert to Decimal, handle potential errors or None
         try:
             # Use Decimal for precision, default to 0 if conversion fails or input is None
-            delivery_fee = Decimal(input_delivery_fee) if input_delivery_fee is not None else Decimal('0.00') 
+            delivery_fee = Decimal(input_delivery_fee) if input_delivery_fee is not None else Decimal('0.00')
         except (TypeError, ValueError):
              # Fallback if conversion fails - could log a warning
              current_app.logger.warning(f"Invalid deliveryFee '{input_delivery_fee}' received for order. Defaulting to 0.")
-             delivery_fee = Decimal('0.00') 
+             delivery_fee = Decimal('0.00')
              # Alternatively, could recalculate here as a fallback:
              # delivery_fee = calculate_delivery_fee(delivery_location)
 
@@ -151,7 +151,7 @@ def create_order():
             delivery_location=delivery_location,
             order_status=OrderStatus.PENDING
         )
-        
+
         # Save to database
         db.session.add(order)
         db.session.commit()
@@ -167,7 +167,7 @@ def create_order():
                 'event': json.dumps(order.to_dict())  # Keep the same payload structure
             }
         )
-        
+
         return jsonify({
             'success': True,
             'order_id': order.order_id,
@@ -182,13 +182,13 @@ def create_order():
 def update_order_status_action():
     """
     Update an order's status (action-based API).
-    
+
     Expected JSON input:
     {
         "orderId": "order-uuid",
         "status": "ACCEPTED"  // Must be a valid OrderStatus enum value
     }
-    
+
     Returns:
     {
         "message": "Order status updated successfully",
@@ -200,7 +200,7 @@ def update_order_status_action():
         # Validate input: both orderId and status must be provided
         if not data or 'orderId' not in data or 'status' not in data:
             return jsonify({'error': 'Missing required fields: orderId or status'}), 400
-            
+
         order_id = data['orderId']
         status = data['status']
 
@@ -215,12 +215,23 @@ def update_order_status_action():
         if not order:
             return jsonify({'error': 'Order not found'}), 404
 
-        # Update the order's status
+        # Update the order's status and corresponding timestamp
         order.order_status = new_status
-        
-        # If the new status is COMPLETED, update the completed_at timestamp
-        if new_status == OrderStatus.COMPLETED:
-            order.completed_at = db.func.now()
+        timestamp_now = db.func.now() # Get current time once
+
+        if new_status == OrderStatus.ACCEPTED:
+            order.accepted_at = timestamp_now
+        elif new_status == OrderStatus.PLACED:
+            order.placed_at = timestamp_now
+        elif new_status == OrderStatus.ON_THE_WAY:
+            order.picked_up_at = timestamp_now
+        elif new_status == OrderStatus.DELIVERED:
+            order.delivered_at = timestamp_now
+        elif new_status == OrderStatus.COMPLETED:
+            order.completed_at = timestamp_now
+        elif new_status == OrderStatus.CANCELLED:
+            order.cancelled_at = timestamp_now
+        # PENDING and CREATED are usually handled at creation or by other specific routes
 
         db.session.commit()
 
@@ -251,13 +262,13 @@ def update_order_status_action():
 def accept_order():
     """
     Runner accepts an order.
-    
+
     Expected JSON input:
     {
         "orderId": "order-uuid",
         "runner_id": "runner-uuid"
     }
-    
+
     Returns:
     {
         "success": true,
@@ -288,9 +299,10 @@ def accept_order():
         if order.runner_id:
             return jsonify({'error': 'Order already accepted by another runner'}), 400
 
-        # Update the order: assign runner_id and set status to ACCEPTED
+        # Update the order: assign runner_id, set status to ACCEPTED, and set accepted_at timestamp
         order.runner_id = runner_id
         order.order_status = OrderStatus.ACCEPTED
+        order.accepted_at = db.func.now() # Set specific timestamp
         db.session.commit()
 
         # Publish event using the correct method
@@ -321,12 +333,12 @@ def accept_order():
 def cancel_order():
     """
     Cancel an existing order.
-    
+
     Expected JSON input:
     {
         "orderId": "order-uuid"
     }
-    
+
     Returns:
     {
         "message": "Order cancelled successfully",
@@ -349,8 +361,9 @@ def cancel_order():
         if order.order_status != OrderStatus.CREATED:
             return jsonify({'error': f"Order cannot be cancelled in status: {order.order_status.name}"}), 400
 
-        # Update the order's status to CANCELLED
+        # Update the order's status to CANCELLED and set cancelled_at timestamp
         order.order_status = OrderStatus.CANCELLED
+        order.cancelled_at = db.func.now() # Set specific timestamp
         db.session.commit()
 
         # Publish event using the correct method
@@ -380,12 +393,12 @@ def cancel_order():
 def cancel_acceptance():
     """
     Runner cancels their acceptance of an order.
-    
+
     Expected JSON input:
     {
         "orderId": "order-uuid"
     }
-    
+
     Returns:
     {
         "message": "Order acceptance cancelled successfully",
@@ -398,7 +411,7 @@ def cancel_acceptance():
             return jsonify({'error': 'Missing required field: orderId'}), 400
 
         order_id = data['orderId']
-        
+
         # Retrieve the order from the database
         order = Order.query.get(order_id)
         if not order:
@@ -480,9 +493,9 @@ def clear_runner():
         # Store the current runner_id for event logging
         runner_id = order.runner_id
 
-        # Clear the runner_id and revert status to CREATED
+        # Clear runner_id and revert status to CREATED
         order.runner_id = None
-        order.order_status = OrderStatus.CREATED # Revert status like cancelAcceptance
+        order.order_status = OrderStatus.CREATED
         db.session.commit()
 
         # Publish event using the correct method
@@ -535,7 +548,7 @@ def complete_order():
 
         # Update the order status and set the completion timestamp
         order.order_status = OrderStatus.COMPLETED
-        order.completed_at = db.func.now()
+        order.completed_at = db.func.now() # Set specific timestamp
         db.session.commit()
 
         # Publish event using the correct method
@@ -570,23 +583,23 @@ def test_create_order():
     """Create a new order - simple CRUD without saga orchestration"""
     try:
         data = request.json
-        
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-            
+
         customer_id = data.get('customer_id')
         order_details = data.get('order_details')
-        
+
         if not customer_id or not order_details:
             return jsonify({'error': 'Missing required fields: customer_id or order_details'}), 400
-        
+
         # Calculate amounts
         food_items = order_details.get('foodItems', [])
         delivery_location = order_details.get('deliveryLocation', '')
-        
+
         food_fee = calculate_food_total(food_items)
         delivery_fee = calculate_delivery_fee(delivery_location)
-        
+
         # Create a new order
         order = Order(
             order_id=str(uuid.uuid4()),
@@ -597,11 +610,11 @@ def test_create_order():
             delivery_location=delivery_location,
             order_status=OrderStatus.PENDING
         )
-        
+
         # Save to database
         db.session.add(order)
         db.session.commit()
-        
+
         return jsonify({
             'success': True,
             'order_id': order.order_id,

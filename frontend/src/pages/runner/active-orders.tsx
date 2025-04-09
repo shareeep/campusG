@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { Clock, MapPin, Package, History, Loader2, Store } from "lucide-react"; // Added Store icon
+import { Clock, MapPin, Package, History, Loader2, Store, Truck, CheckCircle2, User, LucideIcon } from "lucide-react"; // Added Truck, CheckCircle2, User, LucideIcon
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from '@clerk/clerk-react'; // Use Clerk auth
-import { OrderLogs } from '@/components/order/order-logs'; // Assuming this component exists and works
+// import { OrderLogs } from '@/components/order/order-logs'; // Removed unused import
 
 // Define BackendOrder type matching the order service response
 interface BackendOrder {
@@ -18,7 +18,13 @@ interface BackendOrder {
   sagaId: string | null;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
+  // Add specific timestamps from backend response
+  acceptedAt?: string | null;
+  placedAt?: string | null;
+  pickedUpAt?: string | null;
+  deliveredAt?: string | null;
   completedAt: string | null; // ISO string or null
+  cancelledAt?: string | null;
   storeLocation?: string; // Added optional store location
   // Add other fields if needed based on display requirements
   instructions?: string;
@@ -55,6 +61,66 @@ const runnerStatusFlow: Partial<Record<OrderStatusType, OrderStatusType>> = {
   PLACED: 'ON_THE_WAY',
   ON_THE_WAY: 'DELIVERED',
   // DELIVERED triggers the complete saga, not a direct status update
+};
+
+// --- Timeline Helper Logic (Adapted from customer page) ---
+
+// Map API status string (uppercase) to internal status keys used in hierarchy
+const mapApiStatusRunner = (apiStatus: OrderStatusType): string => {
+  switch (apiStatus) {
+    case 'PENDING': return 'created'; // Treat PENDING as the initial state
+    case 'CREATED': return 'created';
+    case 'ACCEPTED': return 'runner_assigned';
+    case 'PLACED': return 'order_placed';
+    case 'ON_THE_WAY': return 'picked_up';
+    case 'DELIVERED': return 'delivered';
+    case 'COMPLETED': return 'completed';
+    // Add 'CANCELLED' if needed
+    default:
+      console.warn(`Unknown API status received on runner page: ${apiStatus}`);
+      return 'created'; // Fallback
+  }
+};
+
+// Define status hierarchy using internal keys
+const statusHierarchyRunner: string[] = [
+  'created',
+  'runner_assigned',
+  'order_placed',
+  'picked_up',
+  'delivered',
+  'completed'
+];
+
+// Get timestamp for a specific status from the BackendOrder object
+const getStatusTimeRunner = (order: BackendOrder, targetStatusKey: string): string | null => {
+  switch (targetStatusKey) {
+    case 'created': return order.createdAt || null;
+    case 'runner_assigned': return order.acceptedAt || null;
+    case 'order_placed': return order.placedAt || null;
+    case 'picked_up': return order.pickedUpAt || null;
+    case 'delivered': return order.deliveredAt || null;
+    case 'completed': return order.completedAt || null;
+    default: return null;
+  }
+};
+
+// --- End Timeline Helper Logic ---
+
+
+// Helper function to get status badge colors
+const getStatusColor = (status: OrderStatusType): string => {
+  switch (status) {
+    case 'COMPLETED': return 'bg-green-100 text-green-700';
+    case 'DELIVERED': return 'bg-blue-100 text-blue-700';
+    case 'ON_THE_WAY': return 'bg-yellow-100 text-yellow-700';
+    case 'PLACED': return 'bg-purple-100 text-purple-700';
+    case 'ACCEPTED': return 'bg-indigo-100 text-indigo-700';
+    case 'CREATED': return 'bg-orange-100 text-orange-700'; // Should not appear here often
+    case 'PENDING': return 'bg-gray-100 text-gray-700'; // Should not appear here often
+    case 'CANCELLED': return 'bg-red-100 text-red-700';
+    default: return 'bg-gray-100 text-gray-700';
+  }
 };
 
 export function ActiveOrdersPage() {
@@ -307,13 +373,8 @@ export function ActiveOrdersPage() {
                       Accepted {new Date(order.createdAt).toLocaleString()} {/* Adjust if accept time available */}
                     </p>
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      order.orderStatus === 'ON_THE_WAY' ? 'bg-yellow-100 text-yellow-700'
-                    : order.orderStatus === 'DELIVERED' ? 'bg-blue-100 text-blue-700'
-                    : order.orderStatus === 'COMPLETED' ? 'bg-green-100 text-green-700'
-                    : order.orderStatus === 'CANCELLED' ? 'bg-red-100 text-red-700'
-                    : 'bg-gray-100 text-gray-700' // Default/other statuses
-                  }`}>
+                  {/* Use getStatusColor helper function for dynamic classes */}
+                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.orderStatus)}`}>
                     {order.orderStatus === 'ON_THE_WAY' && (
                       <Clock className="h-4 w-4 inline-block mr-1" />
                     )}
@@ -398,8 +459,70 @@ export function ActiveOrdersPage() {
                   </div>
                 )}
 
-                {/* Order Logs (Assuming this component works) */}
-                <OrderLogs orderId={order.orderId} />
+                {/* Show Timeline for Completed Orders */}
+                {showCompleted && (
+                  <div className="mt-6 pt-6 border-t">
+                    <h4 className="text-md font-semibold mb-4">Order History</h4>
+                    {(() => {
+                      // Calculate steps inside the map function to access the specific 'order'
+                      const currentMappedStatus = mapApiStatusRunner(order.orderStatus);
+                      const currentStatusIndex = statusHierarchyRunner.indexOf(currentMappedStatus);
+                      // Define TimelineStep interface locally or import if shared
+                      interface TimelineStep {
+                        title: string;
+                        description: string;
+                        icon: LucideIcon;
+                        statusKey: string;
+                        status: 'completed' | 'pending';
+                        time: string | null;
+                      }
+                      const steps: TimelineStep[] = [
+                        { title: 'Order Created', description: 'Order was created', icon: Package, statusKey: 'created' },
+                        { title: 'Runner Accepted', description: `You accepted`, icon: User, statusKey: 'runner_assigned' }, // Changed title and description
+                        { title: 'Order Placed', description: 'You placed the order', icon: Package, statusKey: 'order_placed' },
+                        { title: 'Order Picked Up', description: 'You picked up the order', icon: Truck, statusKey: 'picked_up' },
+                        { title: 'Order Delivered', description: 'You delivered the order', icon: CheckCircle2, statusKey: 'delivered' },
+                        { title: 'Order Completed', description: 'Order is complete', icon: CheckCircle2, statusKey: 'completed' }
+                      ].map(step => ({
+                        ...step,
+                        status: currentStatusIndex >= statusHierarchyRunner.indexOf(step.statusKey) ? 'completed' : 'pending',
+                        time: getStatusTimeRunner(order, step.statusKey)
+                      }));
+
+                      return (
+                        <div className="relative">
+                          <div className="absolute left-4 top-4 bottom-4 w-0.5 bg-gray-200" aria-hidden="true"></div>
+                          {steps.map((step, index) => (
+                            <div key={index} className="flex items-start mb-8 last:mb-0 relative pl-12">
+                              <div className={`
+                                absolute left-0 top-0 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center z-10
+                                ${step.status === 'completed' ? 'bg-green-500' : 'bg-gray-300 border-2 border-white'}
+                              `}>
+                                <step.icon className={`h-5 w-5 ${step.status === 'completed' ? 'text-white' : 'text-gray-500'}`} />
+                              </div>
+                              <div className="ml-4 flex-1 pt-1">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <h3 className={`font-medium ${step.status === 'completed' ? 'text-gray-900' : 'text-gray-500'}`}>
+                                      {step.title}
+                                    </h3>
+                                    <div className="text-sm text-gray-600">{step.description}</div>
+                                  </div>
+                                  {step.time && (
+                                    <span className="text-sm text-gray-500 whitespace-nowrap">
+                                      {new Date(step.time).toLocaleString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+                {/* Order Logs Removed */}
               </div>
             );
           })}
