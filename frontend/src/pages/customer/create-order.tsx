@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Plus, ShoppingBag, Building, DoorClosed, School, MapPin } from 'lucide-react'; // Added icons
+import { Loader2, Plus, ShoppingBag, Building, DoorClosed, School, MapPin, AlertCircle } from 'lucide-react'; // Added icons
 import { useAuth } from '@clerk/clerk-react';
 import { useUserSync } from '@/providers/UserSyncProvider';
 import { Button } from '@/components/ui/button';
@@ -36,8 +36,11 @@ export function CreateOrderPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { userId, getToken, isLoaded, isSignedIn } = useAuth();
-  const { syncState } = useUserSync();
+  const { syncState, backendUser } = useUserSync(); // Get backendUser
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Determine if user has a card (only after sync is complete)
+  const hasCard = Boolean(backendUser?.userStripeCard || backendUser?.user_stripe_card);
 
   // State for form fields based on order-form.tsx structure
   const [items, setItems] = useState<Array<OrderItem>>([{ name: '', quantity: 1, price: 0 }]);
@@ -214,6 +217,15 @@ export function CreateOrderPage() {
       <div className="max-w-2xl mx-auto"> {/* Adjusted max-width */}
         <h1 className="text-2xl font-bold mb-6">Place Your Order</h1> {/* Adjusted heading size */}
 
+        {/* --- No Card Warning --- */}
+        {syncState === 'synced' && !hasCard && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6 flex items-center" role="alert">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span className="block sm:inline">You need to add a payment card to your wallet before placing an order.</span>
+          </div>
+        )}
+        {/* --- End No Card Warning --- */}
+
         <form onSubmit={onSubmit} className="space-y-6"> {/* Use onSubmit directly */}
 
           {/* Store Details Section */}
@@ -246,8 +258,8 @@ export function CreateOrderPage() {
             <h2 className="text-lg font-semibold mb-4">Order Items</h2>
             <div className="space-y-4">
               {items.map((item, index) => (
-                <div key={index} className="flex gap-4 items-start">
-                  <div className="flex-1">
+                <div key={index} className="flex flex-col md:flex-row gap-4 md:items-end border-b pb-4 last:border-b-0"> {/* Responsive flex, alignment, and separator */}
+                  <div className="w-full md:flex-1"> {/* Responsive width */}
                     <Label>Item Name</Label>
                     <Input
                       value={item.name}
@@ -256,7 +268,7 @@ export function CreateOrderPage() {
                       required
                     />
                   </div>
-                  <div className="w-24">
+                  <div className="w-full md:w-24"> {/* Responsive width */}
                     <Label>Quantity</Label>
                     <Input
                       type="number"
@@ -266,7 +278,7 @@ export function CreateOrderPage() {
                       required
                     />
                   </div>
-                  <div className="w-32"> {/* Adjusted width */}
+                  <div className="w-full md:w-32"> {/* Responsive width */}
                     <Label>Price ($)</Label>
                     <Input
                       type="number"
@@ -281,7 +293,7 @@ export function CreateOrderPage() {
                     type="button"
                     variant="secondary" // Changed from destructive
                     size="sm"
-                    className="mt-6"
+                    className="self-end md:self-auto" // Adjust alignment for vertical/horizontal layout
                     onClick={() => removeItem(index)}
                   >
                     Remove
@@ -424,16 +436,18 @@ export function CreateOrderPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={isSubmitting || !isLoaded || syncState !== 'synced'} // Disable based on auth, sync, and submission state
+            disabled={isSubmitting || !isLoaded || syncState !== 'synced' || !hasCard} // Disable based on auth, sync, submission state, AND card status
           >
              {!isLoaded ? (
               <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading Auth... </>
-            ) : syncState !== 'synced' ? (
-               <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Syncing User ({syncState})... </>
-            ) : isSubmitting ? (
-              <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Order... </>
-            ) : (
-              <> <ShoppingBag className="mr-2 h-4 w-4" /> Place Order (${calculateTotal().toFixed(2)}) </>
+             ) : syncState !== 'synced' ? (
+                <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Syncing User ({syncState})... </>
+             ) : !hasCard ? (
+                <> <AlertCircle className="mr-2 h-4 w-4" /> Add Card to Place Order </> // Specific message when no card
+             ) : isSubmitting ? (
+               <> <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Order... </>
+             ) : (
+               <> <ShoppingBag className="mr-2 h-4 w-4" /> Place Order (${calculateTotal().toFixed(2)}) </>
             )}
           </Button>
       </form>
