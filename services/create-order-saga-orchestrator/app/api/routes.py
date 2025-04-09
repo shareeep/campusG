@@ -151,6 +151,32 @@ def cancel_saga(saga_id):
              logger.warning(f"Cannot initiate cancellation for saga {saga_id} in state {saga_state.status.name}")
              # Return 409 Conflict as the saga is in a final or already processing cancellation state.
              return jsonify({'error': f'Saga cannot be cancelled in its current state: {saga_state.status.name}'}), 409
+        
+        # Get order id from saga state - needed to check current order status
+        order_id = saga_state.order_id
+        if not order_id:
+            logger.warning(f"Saga {saga_id} has no associated order_id, cannot check order status.")
+            return jsonify({'error': 'Cannot cancel: no order associated with this saga'}), 400
+        
+        # Check current order status with Order Service to ensure it's still cancellable
+        try:
+            from app.services.http_client import http_client
+            success, order_response = http_client.get_order(order_id)
+            
+            if not success:
+                logger.warning(f"Failed to get current order status for order {order_id}: {order_response}")
+                return jsonify({'error': f'Cannot verify current order status: {order_response.get("error", "Unknown error")}'}), 500
+            
+            current_order_status = order_response.get('orderStatus')
+            if current_order_status != 'CREATED':
+                logger.warning(f"Order {order_id} is in status {current_order_status}, cannot be cancelled.")
+                return jsonify({'error': f'Order cannot be cancelled in status: {current_order_status}'}), 409
+                
+            logger.info(f"Order {order_id} is in CREATED status, proceeding with cancellation")
+            
+        except Exception as order_check_error:
+            logger.error(f"Error checking order status for {order_id}: {str(order_check_error)}")
+            return jsonify({'error': 'Error checking current order status'}), 500
 
         # Initiate cancellation via the orchestrator's internal method
         # Use a specific reason for manual cancellation

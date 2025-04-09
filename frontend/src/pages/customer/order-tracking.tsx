@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Package, Truck, CheckCircle2, Loader2, User } from 'lucide-react'; // Removed Clock, MessageSquare
+import { Package, Truck, CheckCircle2, Loader2, User, Ban } from 'lucide-react'; // Added Ban icon for cancel button
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { getOrder, confirmDelivery } from '@/lib/api'; // getOrder signature changed
+import { getOrder, confirmDelivery, cancelSaga } from '@/lib/api'; // Added cancelSaga import
 import { OrderLogs } from '@/components/order/order-logs';
 // import { useUser } from '@/lib/hooks/use-user'; // useUser might not be needed if userId comes from useAuth
 import { useAuth } from '@clerk/clerk-react'; // Import useAuth to get token and userId
@@ -50,6 +50,7 @@ export function OrderTrackingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false); // Add state for cancel operation
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -114,6 +115,50 @@ export function OrderTrackingPage() {
       if (intervalId) clearInterval(intervalId);
     };
   }, [routeOrderId, userId, getToken, isAuthLoaded]); // Dependencies are correct now
+
+  // Handler for cancelling an order
+  const handleCancelOrder = async () => {
+    if (!orderData || !orderData.sagaId || !userId) {
+       toast({ 
+         title: "Error", 
+         description: "Cannot cancel order. Missing saga ID or user info.", 
+         variant: "destructive" 
+       });
+       return;
+    }
+
+    setIsCancelling(true);
+    try {
+      const token = await getToken();
+      const result = await cancelSaga(orderData.sagaId, token);
+      
+      if (result.success) {
+        toast({
+          title: "Order Cancellation Initiated",
+          description: result.message || "Your order cancellation has been initiated.",
+        });
+        
+        // Refetch order details after cancellation request
+        const updatedData = await getOrder(orderData.orderId, token);
+        setOrderData(updatedData); // Update with new data which should reflect cancellation status
+      } else {
+        toast({
+          title: "Cancellation Failed",
+          description: result.message || "Failed to cancel the order. Please try again.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+       toast({
+         title: "Error Cancelling Order",
+         description: `Failed to cancel order: ${errorMessage}. Please try again.`,
+         variant: "destructive"
+       });
+    } finally {
+       setIsCancelling(false);
+    }
+  };
 
   const handleConfirmDelivery = async () => {
     // Use orderData (API response)
@@ -365,6 +410,27 @@ export function OrderTrackingPage() {
               </div>
             </div>
 
+            {/* Cancel Order Button - Only show when status is CREATED and sagaId exists */}
+            {orderData.orderStatus === 'CREATED' && orderData.sagaId && (
+              <div className="mt-8 pt-6 border-t">
+                <Button 
+                  onClick={handleCancelOrder} 
+                  className="w-full bg-red-600 hover:bg-red-700 text-white" 
+                  variant="secondary"
+                  disabled={isCancelling}
+                >
+                  {isCancelling ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cancelling...</>
+                  ) : (
+                    <><Ban className="mr-2 h-4 w-4" /> Cancel Order</>
+                  )}
+                </Button>
+                <p className="text-sm text-gray-600 text-center mt-2">
+                  You can only cancel before a runner accepts your order
+                </p>
+              </div>
+            )}
+            
             {/* Confirm Delivery Button - Logic might need adjustment based on available data */}
             {/* Show button if status allows confirmation (e.g., 'DELIVERED' or 'PICKED_UP' from API) */}
             {/* Confirmation status check might need removal if not in API response */}
