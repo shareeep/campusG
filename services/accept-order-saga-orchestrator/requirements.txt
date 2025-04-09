@@ -9,3 +9,4 @@ Werkzeug==2.2.3
 kafka-python==2.0.2
 temporalio==1.0.0 # Added missing temporal dependency
 Flask-Cors>=3.0 # Added for CORS support
+flasgger==0.9.5 # Added for Swagger API documentation

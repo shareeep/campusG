@@ -2,6 +2,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS # Import CORS
+from flasgger import Swagger # Import Swagger
 import os
 
 # Initialize SQLAlchemy without binding to a specific app
@@ -39,6 +40,8 @@ def create_app(config=None):
     # Initialize database
     db.init_app(app)
     migrate.init_app(app, db)
+    swagger = Swagger(app) # Initialize Flasgger
+    app.logger.info("Flasgger initialized for Swagger UI at /apidocs/")
     
     # Register blueprints
     from app.api.notification_routes import api as notification_api

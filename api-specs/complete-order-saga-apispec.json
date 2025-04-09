@@ -1,0 +1,88 @@
+{
+  "definitions": {}, 
+  "info": {
+    "description": "powered by Flasgger", 
+    "termsOfService": "/tos", 
+    "title": "A swagger API", 
+    "version": "0.0.1"
+  }, 
+  "paths": {
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Service is healthy.", 
+            "schema": {
+              "properties": {
+                "status": {
+                  "example": "healthy", 
+                  "type": "string"
+                }
+              }, 
+              "type": "object"
+            }
+          }
+        }, 
+        "summary": "Health check for the Complete Order API Trigger.", 
+        "tags": [
+          "Health"
+        ]
+      }
+    }, 
+    "/triggerCompleteOrderWorkflow": {
+      "post": {
+        "consumes": [
+          "application/json"
+        ], 
+        "description": "Starts the asynchronous Complete Order workflow in Temporal.", 
+        "parameters": [
+          {
+            "description": "Input data for the workflow, typically including order_id and runner_id.", 
+            "in": "body", 
+            "name": "body", 
+            "required": true, 
+            "schema": {
+              "properties": {
+                "order_id": {
+                  "format": "uuid", 
+                  "type": "string"
+                }, 
+                "runner_id": {
+                  "type": "string"
+                }
+              }, 
+              "type": "object"
+            }
+          }
+        ], 
+        "produces": [
+          "application/json"
+        ], 
+        "responses": {
+          "200": {
+            "description": "Workflow triggered successfully.", 
+            "schema": {
+              "properties": {
+                "message": {
+                  "type": "string"
+                }, 
+                "workflow_id": {
+                  "type": "string"
+                }
+              }, 
+              "type": "object"
+            }
+          }, 
+          "500": {
+            "description": "Internal Server Error (failed to trigger workflow)"
+          }
+        }, 
+        "summary": "Trigger the Complete Order Temporal Workflow.", 
+        "tags": [
+          "Workflow Trigger"
+        ]
+      }
+    }
+  }, 
+  "swagger": "2.0"
+}

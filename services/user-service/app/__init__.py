@@ -3,6 +3,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
+from flasgger import Swagger # Import Swagger
 import os
 import logging
 import sys
@@ -43,6 +44,8 @@ def create_app():
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
+    swagger = Swagger(app) # Initialize Flasgger
+    logger.info("Flasgger initialized for Swagger UI at /apidocs/")
 
     # Import models to ensure they're known to Flask-Migrate
     from app.models import models

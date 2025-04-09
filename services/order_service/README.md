@@ -53,17 +53,69 @@ This service provides basic CRUD operations for orders:
 
 The complex transaction management is handled by dedicated saga orchestrator services that call these CRUD endpoints.
 
-### API Routes
+### HTTP API Endpoints
 
-The service exposes RESTful endpoints in `app/api/routes.py`:
+The service exposes the following Flask-based HTTP endpoints (defined in `app/api/routes.py`):
 
-- `GET /api/orders`: Get all orders with pagination
-- `GET /api/getOrderDetails`: Get a specific order
-- `POST /api/orders`: Create a new order
-- `PUT /api/orders/<order_id>/status`: Update an order's status
-- `POST /api/orders/<order_id>/accept`: Accept an order (runner)
-- `POST /api/cancelOrder`: Cancel an order
-- `POST /api/cancelAcceptance`: Cancel runner acceptance
+*   **`GET /health`**:
+    *   **Purpose:** Basic health check.
+    *   **Response:** `{'status': 'healthy'}`
+
+*   **`GET /orders`**:
+    *   **Purpose:** Retrieves all orders (paginated). Useful for debugging.
+    *   **Query Parameters:** `page` (int), `limit` (int), `status` (string, e.g., "ACCEPTED"), `runnerId` (string)
+    *   **Response:** Paginated list of order objects.
+
+*   **`GET /getOrderDetails`**:
+    *   **Purpose:** Retrieves details for a specific order.
+    *   **Query Parameter:** `orderId` (string, required)
+    *   **Response:** Single order object or 404.
+
+*   **`GET /orders/customer/<customer_id>`**:
+    *   **Purpose:** Retrieves orders for a specific customer (paginated).
+    *   **Path Parameter:** `customer_id` (string)
+    *   **Query Parameters:** `page` (int), `limit` (int)
+    *   **Response:** Paginated list of order objects.
+
+*   **`POST /createOrder`**:
+    *   **Purpose:** Creates an order directly via API (CRUD style). Publishes `ORDER_CREATED` Kafka event.
+    *   **Request Body:** `{ "customer_id": "...", "order_details": { "foodItems": [...], "storeLocation": "...", "deliveryLocation": "...", "deliveryFee": "..." } }`
+    *   **Response:** Success message with new `order_id`.
+
+*   **`POST /updateOrderStatus`**:
+    *   **Purpose:** Updates an order's status directly via API. Publishes `ORDER_UPDATED` Kafka event.
+    *   **Request Body:** `{ "orderId": "...", "status": "ACCEPTED" }` (Status must match `OrderStatus` enum)
+    *   **Response:** Success message and updated order object.
+
+*   **`POST /verifyAndAcceptOrder`**:
+    *   **Purpose:** Allows a runner to accept an order. Publishes `ORDER_ACCEPTED` Kafka event.
+    *   **Request Body:** `{ "orderId": "...", "runner_id": "..." }`
+    *   **Response:** Success message with `order_id`.
+
+*   **`POST /cancelOrder`**:
+    *   **Purpose:** Cancels an order directly via API (if status allows). Publishes `ORDER_CANCELLED` Kafka event.
+    *   **Request Body:** `{ "orderId": "..." }`
+    *   **Response:** Success message and updated order object.
+
+*   **`POST /cancelAcceptance`**:
+    *   **Purpose:** Allows a runner to cancel their acceptance of an order. Publishes `ORDER_ACCEPTANCE_CANCELLED` Kafka event.
+    *   **Request Body:** `{ "orderId": "..." }`
+    *   **Response:** Success message and updated order object.
+
+*   **`POST /clearRunner`**:
+    *   **Purpose:** Clears the assigned runner from an order (if status allows). Publishes `ORDER_RUNNER_CLEARED` Kafka event.
+    *   **Request Body:** `{ "orderId": "..." }`
+    *   **Response:** Success message and updated order object.
+
+*   **`POST /completeOrder`**:
+    *   **Purpose:** Marks an order as completed directly via API. Publishes `ORDER_COMPLETED` Kafka event.
+    *   **Request Body:** `{ "orderId": "..." }`
+    *   **Response:** Success message and updated order object.
+
+*   **`POST /testCreateOrder`**:
+    *   **Purpose:** Creates an order directly via API (likely for testing, does not publish Kafka event).
+    *   **Request Body:** `{ "customer_id": "...", "order_details": { "foodItems": [...], "deliveryLocation": "..." } }`
+    *   **Response:** Success message with new `order_id`.
 
 ### Database Models
 
@@ -73,12 +125,40 @@ The service defines SQLAlchemy models in `app/models/models.py`:
 - `OrderStatus`: Enum defining possible order statuses
 - `PaymentStatus`: Enum defining possible payment statuses
 
-### Kafka Integration
+### Kafka Interactions
 
-The service integrates with Kafka for event sourcing in `app/services/kafka_service.py`:
+The service uses Kafka for asynchronous communication, primarily driven by commands from saga orchestrators and publishing events reflecting order state changes. (Defined in `app/services/kafka_service.py`)
 
-- Publishes events when order status changes
-- Subscribes to relevant events from other services
+*   **Consumer:**
+    *   **Topic:** `order_commands` (Default name)
+    *   **Group ID:** `order-service-group` (Default name)
+    *   **Consumed Command Types:**
+        *   `type: 'create_order'`
+            *   **Expected Payload:** `{ "customer_id": "...", "order_details": {...}, "saga_id": "...", "correlation_id": "..." }`
+            *   **Action:** Creates an order record in the database. Publishes `order.created` event.
+        *   `type: 'update_order_status'`
+            *   **Expected Payload:** `{ "order_id": "...", "status": "...", "correlation_id": "..." }`
+            *   **Action:** Updates the order's status in the database. Publishes `order.status_updated` event on success or `order.status_update_failed` on failure.
+        *   `type: 'cancel_order'`
+            *   **Expected Payload:** `{ "order_id": "...", "reason": "...", "correlation_id": "..." }`
+            *   **Action:** Updates the order's status to `CANCELLED`. Publishes `order.cancelled` event.
+
+*   **Producer:**
+    *   **Topic:** `order_events` (Default name)
+    *   **Produced Event Types (from Kafka Command Handlers):**
+        *   `type: 'order.created'` (Payload: `order_id`, `customer_id`, `status`, `saga_id`, `correlation_id`)
+        *   `type: 'order.status_updated'` (Payload: `order_id`, `status`, `saga_id`, `correlation_id`)
+        *   `type: 'order.status_update_failed'` (Payload: `order_id`, `error`, `correlation_id`)
+        *   `type: 'order.cancelled'` (Payload: `order_id`, `reason`, `correlation_id`)
+    *   **Produced Event Types (from HTTP API Routes):**
+        *   `ORDER_CREATED`
+        *   `ORDER_UPDATED`
+        *   `ORDER_ACCEPTED`
+        *   `ORDER_CANCELLED`
+        *   `ORDER_ACCEPTANCE_CANCELLED`
+        *   `ORDER_RUNNER_CLEARED`
+        *   `ORDER_COMPLETED`
+        *   *(Common Payload for API events:* `{ 'customerId': ..., 'runnerId': ..., 'orderId': ..., 'status': '...', 'event': json.dumps(order.to_dict()), 'correlation_id': '...', 'source': 'order-service' }`*)*
 
 ## Development
 

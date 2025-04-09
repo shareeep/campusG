@@ -39,16 +39,31 @@ The orchestrator interacts with the following Kafka topics:
 
 ## API Endpoints
 
-- `POST /api/orders`: Initiate a new create order saga
-  - Request body: `{ "customer_id": "string", "order_details": object }`
-  - Response: `{ "success": true, "saga_id": "uuid", "status": "STARTED" }`
+The service exposes the following Flask-based HTTP endpoints:
 
-- `GET /api/sagas/:saga_id`: Get the current state of a saga
-  - Response: Complete saga state including status, current step, and error (if any)
+*   **`POST /orders`**:
+    *   **Purpose:** Initiate a new create order saga.
+    *   **Request Body:** `{ "customer_id": "string", "order_details": { "foodItems": [...], "deliveryLocation": "...", "deliveryFee": "..." } }`
+    *   **Response (Success):** `202 Accepted` - `{ "success": true, "message": "Saga started successfully", "saga_id": "uuid", "status": "STARTED" }`
+    *   **Response (Failure):** `400 Bad Request` or `500 Internal Server Error`
 
-- `GET /api/sagas`: List all sagas with optional status filtering
-  - Query params: `status=STARTED|COMPLETED|FAILED`
-  - Response: Array of saga states
+*   **`GET /sagas/<saga_id>`**:
+    *   **Purpose:** Get the current state of a specific saga instance.
+    *   **Path Parameter:** `saga_id` (string, UUID)
+    *   **Response (Success):** `200 OK` - Complete saga state object (`id`, `status`, `current_step`, `order_id`, `error`, timestamps, etc.).
+    *   **Response (Failure):** `404 Not Found`
+
+*   **`GET /sagas`**:
+    *   **Purpose:** List recent saga instances (limit 100).
+    *   **Query Parameter:** `status` (string, e.g., `COMPLETED`, `FAILED`, `STARTED`) - Optional filter.
+    *   **Response (Success):** `200 OK` - Array of summarized saga state objects.
+    *   **Response (Failure):** `400 Bad Request` (for invalid status)
+
+*   **`POST /sagas/<saga_id>/cancel`**:
+    *   **Purpose:** Manually request cancellation/compensation for a specific saga instance.
+    *   **Path Parameter:** `saga_id` (string, UUID)
+    *   **Response (Success):** `202 Accepted` - `{ "message": "Saga cancellation initiated" }`
+    *   **Response (Failure):** `404 Not Found`, `409 Conflict` (if saga is in a non-cancellable state), `500 Internal Server Error`, `503 Service Unavailable`
 
 ## Configuration
 

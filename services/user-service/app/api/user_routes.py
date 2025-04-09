@@ -1,11 +1,5 @@
 from flask import Blueprint, request, jsonify, current_app
-import uuid
-import json
-import traceback
-import os
-from sqlalchemy.exc import IntegrityError
-from app.models.models import User
-from flask import Blueprint, request, jsonify, current_app
+from flasgger import swag_from # Import swag_from
 import uuid
 import json
 import traceback
@@ -24,23 +18,80 @@ load_dotenv()
 
 api = Blueprint('api', __name__)
 
+# Note: The health check defined in __init__.py takes precedence if registered at root.
+# If this blueprint's health check is needed under /api/health, it's fine.
 @api.route('/health', methods=['GET'])
+@swag_from({
+    'tags': ['Health'],
+    'summary': 'Health check for the User Service API.',
+    'responses': {
+        '200': {
+            'description': 'Service is healthy.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'status': {'type': 'string', 'example': 'healthy'}
+                }
+            }
+        }
+    }
+})
 def health_check():
     """Basic health check endpoint"""
     return jsonify({'status': 'healthy'}), 200
 
 @api.route('/user/temp', methods=['POST'])
-def create_temp_user():
-    """
-    Create a temporary user
-    
-    Request body should contain:
-    {
-        "email": "temp_user@example.com",
-        "first_name": "Temp",
-        "last_name": "User"
+@swag_from({
+    'tags': ['Users'],
+    'summary': 'Create a temporary user.',
+    'description': 'Creates a user record with a temporary, generated Clerk ID. Useful for testing or specific setup scenarios.',
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['email'],
+                'properties': {
+                    'email': {'type': 'string', 'format': 'email', 'example': 'temp_user@example.com'},
+                    'first_name': {'type': 'string', 'example': 'Temp'},
+                    'last_name': {'type': 'string', 'example': 'User'},
+                    'phone_number': {'type': 'string', 'example': '+1234567890'},
+                    'username': {'type': 'string', 'example': 'tempuser'},
+                    'user_stripe_card': {'type': 'object', 'description': 'Legacy card details (optional)'},
+                    'stripe_customer_id': {'type': 'string', 'example': 'cus_...'}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '201': {
+            'description': 'Temporary user created successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'},
+                    'user': {
+                        'type': 'object',
+                        'properties': {
+                            'clerk_user_id': {'type': 'string'},
+                            'email': {'type': 'string'},
+                            'first_name': {'type': 'string'},
+                            'last_name': {'type': 'string'}
+                        }
+                    }
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing email, email exists)'},
+        '500': {'description': 'Internal Server Error'}
     }
-    """
+})
+def create_temp_user():
     try:
         data = request.json
         
@@ -98,12 +149,75 @@ def create_temp_user():
         return jsonify({'success': False, 'message': f"Failed to create temporary user: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>', methods=['GET'])
+@swag_from({
+    'tags': ['Users'],
+    'summary': 'Get user details by Clerk User ID.',
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': 'The Clerk User ID of the user to retrieve.'
+        },
+        {
+            'name': 'includePaymentDetails',
+            'in': 'query',
+            'required': False,
+            'type': 'boolean',
+            'default': True,
+            'description': 'Whether to include payment details in the response.'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'User details retrieved successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'user': { '$ref': '#/definitions/User' } # Assuming a User definition exists
+                }
+            }
+        },
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error'}
+    },
+    # Define User schema (simplified example)
+    'definitions': {
+        'User': {
+            'type': 'object',
+            'properties': {
+                'clerk_user_id': {'type': 'string'},
+                'email': {'type': 'string'},
+                'first_name': {'type': 'string'},
+                'last_name': {'type': 'string'},
+                'phone_number': {'type': 'string', 'nullable': True},
+                'username': {'type': 'string', 'nullable': True},
+                'customer_rating': {'type': 'number', 'format': 'float'},
+                'runner_rating': {'type': 'number', 'format': 'float'},
+                'created_at': {'type': 'string', 'format': 'date-time'},
+                'updated_at': {'type': 'string', 'format': 'date-time'},
+                'stripe_customer_id': {'type': 'string', 'nullable': True},
+                'stripe_connect_account_id': {'type': 'string', 'nullable': True},
+                'user_stripe_card': { # Included if includePaymentDetails=true
+                    'type': 'object',
+                    'nullable': True,
+                    'properties': {
+                        'payment_method_id': {'type': 'string'},
+                        'last4': {'type': 'string'},
+                        'brand': {'type': 'string'},
+                        'exp_month': {'type': 'integer'},
+                        'exp_year': {'type': 'integer'},
+                        'updated_at': {'type': 'string', 'format': 'date-time'}
+                        # Add other legacy fields if needed
+                    }
+                }
+            }
+        }
+    }
+})
 def get_user(clerk_user_id):
-    """
-    Get user information by ID
-    
-    This endpoint retrieves all of the user's information 
-    """
     try:
         user = User.query.get(clerk_user_id)
         
@@ -123,10 +237,44 @@ def get_user(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to retrieve user: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/payment', methods=['GET'])
+@swag_from({
+    'tags': ['Payments'],
+    'summary': "Get user's primary payment information (formatted).",
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Payment information retrieved.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'payment_info': {
+                        'type': 'object',
+                        'properties': {
+                            'payment_method_id': {'type': 'string'},
+                            'last_four': {'type': 'string'},
+                            'card_type': {'type': 'string'},
+                            'expiry_month': {'type': 'integer'},
+                            'expiry_year': {'type': 'integer'}
+                        }
+                    }
+                }
+            }
+        },
+        '400': {'description': 'User has no payment method'},
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error'}
+    }
+})
 def get_payment_info(clerk_user_id):
-    """
-    Get only the user's payment information
-    """
     try:
         user = User.query.get(clerk_user_id)
         
@@ -155,12 +303,34 @@ def get_payment_info(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to retrieve payment information: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/connect-account', methods=['GET'])
+@swag_from({
+    'tags': ['Stripe Connect'],
+    'summary': "Get user's Stripe Connect account ID.",
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Stripe Connect account ID retrieved.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'stripe_connect_account_id': {'type': 'string', 'example': 'acct_...'}
+                }
+            }
+        },
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error'}
+    }
+})
 def get_connect_account(clerk_user_id):
-    """
-    Get a user's Stripe Connect account ID
-    
-    This endpoint returns just the user's Stripe Connect account ID.
-    """
     try:
         user = User.query.get(clerk_user_id)
         
@@ -177,24 +347,50 @@ def get_connect_account(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to retrieve Connect account ID: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/payment', methods=['PUT'])
+@swag_from({
+    'tags': ['Payments'],
+    'summary': "Update user's primary payment method.",
+    'description': "Updates the user's primary payment method using a Stripe PaymentMethod ID. Retrieves details from Stripe and stores them. Legacy format support is deprecated.",
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        },
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['paymentMethodId'],
+                'properties': {
+                    'paymentMethodId': {'type': 'string', 'example': 'pm_...'}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Payment information updated successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing data)'},
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error (including Stripe API errors)'}
+    }
+})
 def update_payment_info(clerk_user_id):
-    """
-    Update user payment information with Stripe PaymentMethod
-    
-    Request body should contain:
-    {
-        "paymentMethodId": "pm_1234567890"
-    }
-    
-    Or the traditional format:
-    {
-        "stripeToken": "tok_visa",
-        "cardLast4": "4242",
-        "cardType": "Visa",
-        "expiryMonth": "12",
-        "expiryYear": "2025"
-    }
-    """
     try:
         user = User.query.get(clerk_user_id)
         
@@ -269,13 +465,39 @@ def update_payment_info(clerk_user_id):
         current_app.logger.error(f"Error updating payment info for user {clerk_user_id}: {str(e)}")
         return jsonify({'success': False, 'message': f"Failed to update payment information: {str(e)}"}), 500
 
+# Note: This endpoint seems duplicated by DELETE /user/<clerk_user_id>/payment-methods
+# Keeping it for now but marking as potentially redundant.
 @api.route('/user/<clerk_user_id>/payment', methods=['DELETE'])
+@swag_from({
+    'tags': ['Payments'],
+    'summary': "Delete user's primary payment method.",
+    'description': "Removes the stored primary payment method details for the user. Consider using DELETE /user/{clerk_user_id}/payment-methods instead.",
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Payment information deleted successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        '400': {'description': 'User has no payment method to delete'},
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error'}
+    }
+})
 def delete_payment_info(clerk_user_id):
-    """
-    Delete a user's payment information
-    
-    This endpoint removes the stored payment method for a user.
-    """
     try:
         user = User.query.get(clerk_user_id)
         
@@ -301,15 +523,49 @@ def delete_payment_info(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to delete payment information: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/update-customer-rating', methods=['POST'])
-def update_customer_rating(clerk_user_id):
-    """
-    Update the customer rating
-    
-    Request body should contain:
-    {
-        "rating": 4.5
+@swag_from({
+    'tags': ['Ratings'],
+    'summary': "Update user's customer rating.",
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        },
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['rating'],
+                'properties': {
+                    'rating': {'type': 'number', 'format': 'float', 'example': 4.5}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Customer rating updated successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing rating)'},
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error'}
     }
-    """
+})
+def update_customer_rating(clerk_user_id):
     try:
         user = User.query.get(clerk_user_id)
         
@@ -337,15 +593,49 @@ def update_customer_rating(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to update customer rating: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/update-runner-rating', methods=['POST'])
-def update_runner_rating(clerk_user_id):
-    """
-    Update the runner rating
-    
-    Request body should contain:
-    {
-        "rating": 4.5
+@swag_from({
+    'tags': ['Ratings'],
+    'summary': "Update user's runner rating.",
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        },
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['rating'],
+                'properties': {
+                    'rating': {'type': 'number', 'format': 'float', 'example': 4.8}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Runner rating updated successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing rating)'},
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error'}
     }
-    """
+})
+def update_runner_rating(clerk_user_id):
     try:
         user = User.query.get(clerk_user_id)
         
@@ -373,13 +663,29 @@ def update_runner_rating(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to update runner rating: {str(e)}"}), 500
 
 @api.route('/user/list-users', methods=['GET'])
+@swag_from({
+    'tags': ['Users'],
+    'summary': 'Get a list of all Clerk User IDs.',
+    'description': 'Retrieves all Clerk User IDs stored in the system. Useful for debugging/testing.',
+    'responses': {
+        '200': {
+            'description': 'List of user IDs retrieved.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'userIds': {
+                        'type': 'array',
+                        'items': {'type': 'string'}
+                    },
+                    'message': {'type': 'string', 'description': 'Included if no users are found.'}
+                }
+            }
+        },
+        '500': {'description': 'Internal Server Error'}
+    }
+})
 def list_user_ids():
-    """
-    Get a list of all user IDs
-    
-    This endpoint returns all user IDs in the system.
-    Useful for testing and development purposes.
-    """
     try:
         # Query just the clerk_user_id column for efficiency
         user_ids = [user.clerk_user_id for user in User.query.with_entities(User.clerk_user_id).all()]
@@ -401,14 +707,56 @@ def list_user_ids():
         return jsonify({'success': False, 'message': f"Failed to retrieve user IDs: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/connect-account', methods=['PUT'])
-def update_connect_account(clerk_user_id):
-    """Update a user's Stripe Connect account ID
-    
-    Request body should contain:
-    {
-        "stripe_connect_account_id": "acct_123456789"
+@swag_from({
+    'tags': ['Stripe Connect'],
+    'summary': "Update user's Stripe Connect account ID.",
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        },
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['stripe_connect_account_id'],
+                'properties': {
+                    'stripe_connect_account_id': {'type': 'string', 'example': 'acct_...'}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Connect account ID updated successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'},
+                    'user': {
+                        'type': 'object',
+                        'properties': {
+                            'clerkUserId': {'type': 'string'},
+                            'stripeConnectAccountId': {'type': 'string'}
+                        }
+                    }
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing connect account ID)'},
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error'}
     }
-    """
+})
+def update_connect_account(clerk_user_id):
     try:
         user = User.query.get(clerk_user_id)
         
@@ -442,8 +790,61 @@ def update_connect_account(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to update Connect account ID: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/payment-methods', methods=['POST'])
+@swag_from({
+    'tags': ['Payments'],
+    'summary': "Add a payment method to a user.",
+    'description': "Adds a Stripe PaymentMethod to the user, attaches it to their Stripe Customer (creating one if needed), sets it as default, and stores card details.",
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        },
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['payment_method_id'],
+                'properties': {
+                    'payment_method_id': {'type': 'string', 'example': 'pm_...'}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Payment method added successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'description': {'type': 'string'},
+                    'payment_info': {
+                        'type': 'object',
+                        'properties': {
+                            'payment_method_id': {'type': 'string'},
+                            'brand': {'type': 'string'},
+                            'last4': {'type': 'string'},
+                            'exp_month': {'type': 'integer'},
+                            'exp_year': {'type': 'integer'},
+                            'updated_at': {'type': 'string', 'format': 'date-time'}
+                        }
+                    }
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing payment method ID, Stripe error)'},
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error (including Stripe API key config error)'}
+    }
+})
 def add_payment_method(clerk_user_id):
-    """Add a payment method to a user's profile"""
     try:
         data = request.json
         payment_method_id = data.get('payment_method_id')
@@ -521,12 +922,36 @@ def add_payment_method(clerk_user_id):
         return jsonify({"success": False, "description": f"Server error: {str(e)}"}), 500
 
 @api.route('/user/<clerk_user_id>/payment-methods', methods=['DELETE'])
+@swag_from({
+    'tags': ['Payments'],
+    'summary': "Delete user's primary payment method.",
+    'description': "Removes the stored primary payment method details for the user.",
+    'parameters': [
+        {
+            'name': 'clerk_user_id',
+            'in': 'path',
+            'required': True,
+            'type': 'string',
+            'description': "The Clerk User ID."
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Payment method deleted successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'}
+                }
+            }
+        },
+        '400': {'description': 'User has no payment method to delete'},
+        '404': {'description': 'User not found'},
+        '500': {'description': 'Internal Server Error'}
+    }
+})
 def delete_payment_method(clerk_user_id):
-    """
-    Delete a user's payment method
-    
-    This endpoint removes the stored payment method for a user.
-    """
     try:
         user = User.query.get(clerk_user_id)
         
@@ -552,12 +977,50 @@ def delete_payment_method(clerk_user_id):
         return jsonify({'success': False, 'message': f"Failed to delete payment method: {str(e)}"}), 500
 
 @api.route('/user/sync-from-frontend', methods=['POST'])
+@swag_from({
+    'tags': ['Users', 'Sync'],
+    'summary': 'Sync user data from frontend (Clerk).',
+    'description': "Creates or updates a user based on data provided (typically from Clerk via the frontend). Handles creation of associated Stripe Customer and Connect accounts for new users. Avoids overwriting existing payment data during profile-only updates.",
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['clerk_user_id'],
+                'properties': {
+                    'clerk_user_id': {'type': 'string'},
+                    'email': {'type': 'string', 'format': 'email'},
+                    'first_name': {'type': 'string'},
+                    'last_name': {'type': 'string'},
+                    'phone_number': {'type': 'string', 'nullable': True},
+                    'username': {'type': 'string', 'nullable': True},
+                    'profile_update_only': {'type': 'boolean', 'default': False, 'description': 'Set to true to prevent overwriting payment data during profile updates.'}
+                    # Add other potential fields from Clerk data if needed
+                }
+            }
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'User synced successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'},
+                    'user': { '$ref': '#/definitions/User' } # Reference the User definition
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing clerk_user_id)'},
+        '500': {'description': 'Internal Server Error (including Stripe errors)'}
+    }
+})
 def sync_user_from_frontend():
-    """
-    Sync a user from frontend Clerk data
-    
-    This endpoint allows the frontend to sync a user without relying on webhooks
-    """
     try:
         data = request.json
         

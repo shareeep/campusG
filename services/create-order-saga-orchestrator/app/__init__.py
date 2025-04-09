@@ -2,6 +2,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS # Import CORS
+from flasgger import Swagger, swag_from # Import Swagger and swag_from
 import os
 import logging
 import atexit # Import atexit for shutdown hook
@@ -36,6 +37,8 @@ def create_app():
     # Initialize extensions with the app
     db.init_app(app)
     migrate.init_app(app, db)
+    swagger = Swagger(app) # Initialize Flasgger
+    app.logger.info("Flasgger initialized for Swagger UI at /apidocs/")
     # Initialize CORS for all routes from the frontend origin
     CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}}) 
     
@@ -70,6 +73,21 @@ def create_app():
     app.register_blueprint(timer_bp)
     
     @app.route('/health')
+    @swag_from({
+        'tags': ['Health'],
+        'summary': 'Health check for the Create Order Saga Orchestrator API.',
+        'responses': {
+            '200': {
+                'description': 'Service is healthy.',
+                'schema': {
+                    'type': 'object',
+                    'properties': {
+                        'status': {'type': 'string', 'example': 'healthy'}
+                    }
+                }
+            }
+        }
+    })
     def health_check():
         # Disable request logging for health checks to reduce log spam
         return {'status': 'healthy'}, 200

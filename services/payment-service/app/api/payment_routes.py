@@ -6,6 +6,7 @@ from app import db
 # Import PaymentStatus as well
 from app.models.models import Payment, PaymentStatus
 from flask import Blueprint, jsonify, current_app, request
+from flasgger import swag_from # Import swag_from
 # Import SQLAlchemyError for specific DB error handling
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -21,10 +22,51 @@ PAYMENT_COMMANDS_TOPIC = 'payment_commands' # Define the topic name
 # indicating capture/refund completion, depending on the final architecture.
 
 @api.route('/payment/<order_id>/status', methods=['GET'])
+@swag_from({
+    'tags': ['Payments'],
+    'summary': 'Get payment status for a specific order.',
+    'parameters': [
+        {
+            'name': 'order_id', 'in': 'path', 'type': 'string', 'required': True,
+            'description': 'The ID of the order associated with the payment.'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Payment status retrieved.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'payment': { '$ref': '#/definitions/Payment' }
+                }
+            }
+        },
+        '404': {'description': 'Payment not found for the given order ID.'},
+        '500': {'description': 'Internal Server Error'}
+    },
+    # Define Payment schema (simplified example)
+    'definitions': {
+        'Payment': {
+            'type': 'object',
+            'properties': {
+                'id': {'type': 'integer', 'description': 'Internal primary key'},
+                'payment_id': {'type': 'string', 'format': 'uuid', 'description': 'Public unique ID for the payment record'},
+                'order_id': {'type': 'string', 'format': 'uuid'},
+                'customer_id': {'type': 'string'},
+                'runner_id': {'type': 'string', 'nullable': True},
+                'amount': {'type': 'number', 'format': 'float'},
+                'currency': {'type': 'string', 'example': 'sgd'},
+                'status': {'type': 'string', 'enum': [s.name for s in PaymentStatus]},
+                'stripe_payment_intent_id': {'type': 'string', 'nullable': True},
+                'stripe_transfer_id': {'type': 'string', 'nullable': True},
+                'created_at': {'type': 'string', 'format': 'date-time'},
+                'updated_at': {'type': 'string', 'format': 'date-time'}
+            }
+        }
+    }
+})
 def get_payment_status(order_id):
-    """
-    Check the status of a payment for a specific order.
-    """
     logger.debug(f"Received request for payment status for order_id: {order_id}")
     try:
         payment = Payment.query.filter_by(order_id=order_id).first()
@@ -47,10 +89,31 @@ def get_payment_status(order_id):
         }), 500
 
 @api.route('/payment/<payment_id>/details', methods=['GET'])
+@swag_from({
+    'tags': ['Payments'],
+    'summary': 'Get details for a specific payment by its ID.',
+    'parameters': [
+        {
+            'name': 'payment_id', 'in': 'path', 'type': 'string', 'format': 'uuid', 'required': True,
+            'description': 'The internal UUID of the payment record.'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Payment details retrieved.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'payment': { '$ref': '#/definitions/Payment' }
+                }
+            }
+        },
+        '404': {'description': 'Payment not found for the given payment ID.'},
+        '500': {'description': 'Internal Server Error'}
+    }
+})
 def get_payment_details(payment_id):
-    """
-    Get detailed information about a specific payment using its internal payment_id.
-    """
     logger.debug(f"Received request for payment details for payment_id: {payment_id}")
     try:
         # Use query.get for primary key lookup if payment_id is the PK
@@ -80,18 +143,56 @@ def get_payment_details(payment_id):
 
 # Health check endpoint
 @api.route('/health', methods=['GET'])
+@swag_from({
+    'tags': ['Health'],
+    'summary': 'Health check for the Payment Service API.',
+    'responses': {
+        '200': {
+            'description': 'Service is healthy.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'status': {'type': 'string', 'example': 'healthy'}
+                }
+            }
+        }
+    }
+})
 def health_check():
-    """Basic health check endpoint."""
     # Add checks for DB and Kafka connection if needed
     return jsonify({"status": "healthy"}), 200
 
 
 # --- New Payment History Route ---
 @api.route('/history/<user_id>', methods=['GET'])
+@swag_from({
+    'tags': ['Payments'],
+    'summary': "Get payment history summary for a user.",
+    'description': "Fetches total amounts and counts for money spent (as customer) and earned (as runner) by a user.",
+    'parameters': [
+        {
+            'name': 'user_id', 'in': 'path', 'type': 'string', 'required': True,
+            'description': 'The ID of the user (likely Clerk User ID).'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Payment history summary retrieved.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'userId': {'type': 'string'},
+                    'totalSpent': {'type': 'number', 'format': 'float'},
+                    'totalEarned': {'type': 'number', 'format': 'float'},
+                    'spentCount': {'type': 'integer'},
+                    'earnedCount': {'type': 'integer'}
+                }
+            }
+        },
+        '500': {'description': 'Internal Server Error (Database or Processing error)'}
+    }
+})
 def get_payment_history(user_id):
-    """
-    Fetches payment history for a given user, categorized into spent and earned.
-    """
     logger.info(f"Fetching payment history for user_id: {user_id}")
 
     try:
@@ -143,16 +244,49 @@ def get_payment_history(user_id):
 # --- API Endpoints to Trigger Kafka Commands ---
 
 @api.route('/payment/<payment_id>/release', methods=['POST'])
-def trigger_release_payment(payment_id):
-    """
-    API endpoint to trigger the 'release_payment' Kafka command.
-
-    Expects a JSON body with the following format:
-    {
-        "runner_id": "string",
-        "runner_connect_account_id": "string"
+@swag_from({
+    'tags': ['Kafka Triggers'],
+    'summary': "Trigger 'release_payment' Kafka command.",
+    'description': "Publishes a 'release_payment' command to Kafka, typically used to initiate payment capture and transfer to a runner.",
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'name': 'payment_id', 'in': 'path', 'type': 'string', 'format': 'uuid', 'required': True,
+            'description': 'The internal UUID of the payment record to release.'
+        },
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['runner_id', 'runner_connect_account_id'],
+                'properties': {
+                    'runner_id': {'type': 'string', 'description': 'Clerk User ID of the runner.'},
+                    'runner_connect_account_id': {'type': 'string', 'description': "Runner's Stripe Connect account ID (acct_...)."}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '202': {
+            'description': 'Release payment command queued successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'},
+                    'correlation_id': {'type': 'string', 'format': 'uuid'}
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing body or required fields)'},
+        '500': {'description': 'Failed to publish command to Kafka.'},
+        '503': {'description': 'Kafka producer unavailable.'}
     }
-    """
+})
+def trigger_release_payment(payment_id):
     logger.info(f"Received API request to trigger release for payment_id: {payment_id}")
     data = request.get_json()
     if not data:
@@ -202,16 +336,46 @@ def trigger_release_payment(payment_id):
 
 
 @api.route('/payment/<payment_id>/revert', methods=['POST'])
-def trigger_revert_payment(payment_id):
-    """
-    API endpoint to trigger the 'revert_payment' Kafka command.
-
-    Optionally accepts a JSON body with the following format:
-    {
-        "reason": "string" // Optional
+@swag_from({
+    'tags': ['Kafka Triggers'],
+    'summary': "Trigger 'revert_payment' Kafka command.",
+    'description': "Publishes a 'revert_payment' command to Kafka, typically used to initiate payment cancellation or refund.",
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'name': 'payment_id', 'in': 'path', 'type': 'string', 'format': 'uuid', 'required': True,
+            'description': 'The internal UUID of the payment record to revert.'
+        },
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': False,
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'reason': {'type': 'string', 'description': 'Optional reason for reverting the payment.'}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '202': {
+            'description': 'Revert payment command queued successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'},
+                    'correlation_id': {'type': 'string', 'format': 'uuid'}
+                }
+            }
+        },
+        '500': {'description': 'Failed to publish command to Kafka.'},
+        '503': {'description': 'Kafka producer unavailable.'}
     }
-    If no body or reason is provided, a default reason might be used downstream.
-    """
+})
+def trigger_revert_payment(payment_id):
     logger.info(f"Received API request to trigger revert for payment_id: {payment_id}")
     data = request.get_json()
     reason = data.get('reason') if data else None # Optional reason

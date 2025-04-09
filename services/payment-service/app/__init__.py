@@ -2,10 +2,15 @@ import logging
 import os
 import stripe
 
+import logging
+import os
+import stripe
+
 from flask import Flask
 from flask_cors import CORS # Import CORS
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
+from flasgger import Swagger # Import Swagger
 
 # Configure logging early
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -58,6 +63,8 @@ def create_app(config=None):
     logger.info("SQLAlchemy initialized.")
     migrate.init_app(app, db)
     logger.info("Flask-Migrate initialized.")
+    swagger = Swagger(app) # Initialize Flasgger
+    logger.info("Flasgger initialized for Swagger UI at /apidocs/")
 
     # --- Set Stripe API Key ---
     stripe.api_key = app.config.get('STRIPE_SECRET_KEY')

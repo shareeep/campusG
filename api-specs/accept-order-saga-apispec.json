@@ -1,0 +1,94 @@
+{
+  "definitions": {},
+  "info": {
+    "description": "powered by Flasgger",
+    "termsOfService": "/tos",
+    "title": "A swagger API",
+    "version": "0.0.1"
+  },
+  "paths": {
+    "/acceptOrder": {
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "description": "Starts the asynchronous Accept Order workflow in Temporal.",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "properties": {
+                "order_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "runner_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order_id",
+                "runner_id"
+              ],
+              "type": "object"
+            }
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Workflow triggered successfully.",
+            "schema": {
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "workflow_id": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "400": {
+            "description": "Bad Request (e.g., missing fields)"
+          },
+          "500": {
+            "description": "Internal Server Error (failed to trigger workflow)"
+          }
+        },
+        "summary": "Trigger the Accept Order Temporal Workflow.",
+        "tags": [
+          "Workflow Trigger"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Service is healthy.",
+            "schema": {
+              "properties": {
+                "status": {
+                  "example": "healthy",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          }
+        },
+        "summary": "Health check for the Accept Order API Trigger.",
+        "tags": [
+          "Health"
+        ]
+      }
+    }
+  },
+  "swagger": "2.0"
+}

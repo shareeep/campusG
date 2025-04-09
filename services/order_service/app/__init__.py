@@ -2,6 +2,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS # Import CORS
 from flask_migrate import Migrate # Uncomment Migrate import
+from flasgger import Swagger # Import Swagger
 import logging
 
 # Configure logging
@@ -24,6 +25,8 @@ def create_app(config_class=Config):
     # Initialize extensions with app
     db.init_app(app)
     migrate.init_app(app, db) # Uncomment Migrate initialization with app
+    swagger = Swagger(app) # Initialize Flasgger
+    app.logger.info("Flasgger initialized for Swagger UI at /apidocs/")
 
     # Initialize CORS - Allow requests from frontend origin with specific headers/methods
     CORS(

@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request, current_app
+from flasgger import swag_from # Import swag_from
 from datetime import datetime, timezone
 import json
 import threading
@@ -11,25 +12,85 @@ from app.services.kafka_service import kafka_client
 api = Blueprint('api', __name__)
 
 @api.route('/health', methods=['GET'])
+@swag_from({
+    'tags': ['Health'],
+    'summary': 'Health check for the Notification Service API.',
+    'responses': {
+        '200': {
+            'description': 'Service is healthy.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'status': {'type': 'string', 'example': 'healthy'}
+                }
+            }
+        }
+    }
+})
 def health_check():
     """Basic health check endpoint"""
     return jsonify({'status': 'healthy'}), 200
 
 @api.route('/send-notification', methods=['POST'])
-def send_notification():
-    """
-    Send a notification to a user
-    
-    Request body should contain:
-    {
-        "customerId": "customer-123",
-        "runnerId": "runner-456",  (may be null/empty)
-        "orderId": "order-789",
-        "event": "Your order has been placed" 
+@swag_from({
+    'tags': ['Notifications'],
+    'summary': 'Manually create a notification log entry.',
+    'description': 'Creates a notification record directly in the database. This endpoint is primarily for manual logging or testing and does NOT trigger actual user notifications or Kafka events.',
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['customerId', 'orderId', 'event'],
+                'properties': {
+                    'customerId': {'type': 'string', 'example': 'cust_123'},
+                    'runnerId': {'type': 'string', 'example': 'runner_456', 'description': 'Optional runner ID.'},
+                    'orderId': {'type': 'string', 'example': 'order_789'},
+                    'event': {'type': 'string', 'example': 'Manual notification message'}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '201': {
+            'description': 'Notification record created successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'},
+                    'notification': { '$ref': '#/definitions/Notification' }
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing fields)'},
+        '500': {'description': 'Internal Server Error'}
+    },
+    # Define Notification schema (simplified example)
+    'definitions': {
+        'Notification': {
+            'type': 'object',
+            'properties': {
+                'notification_id': {'type': 'string', 'format': 'uuid'},
+                'customer_id': {'type': 'string', 'nullable': True},
+                'runner_id': {'type': 'string', 'nullable': True},
+                'order_id': {'type': 'string', 'nullable': True},
+                'event': {'type': 'string', 'description': 'JSON string of the logged event/message'},
+                'status': {'type': 'string', 'nullable': True},
+                'created_at': {'type': 'string', 'format': 'date-time'},
+                'source_topic': {'type': 'string', 'nullable': True},
+                'event_type': {'type': 'string', 'nullable': True},
+                'correlation_id': {'type': 'string', 'nullable': True},
+                'source_service': {'type': 'string', 'nullable': True}
+            }
+        }
     }
-    
-    This endpoint creates a notification record and sends it to the appropriate channels.
-    """
+})
+def send_notification():
     try:
         data = request.json
         
@@ -179,6 +240,23 @@ def consume_kafka_events():
 
 # Endpoint to get the latest status of an order by ID
 @api.route('/order/<string:order_id>/latest', methods=['GET'])
+@swag_from({
+    'tags': ['Notifications'],
+    'summary': 'Get the latest notification log entry for an order.',
+    'parameters': [
+        {
+            'name': 'order_id', 'in': 'path', 'type': 'string', 'required': True,
+            'description': 'The ID of the order.'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Latest notification retrieved.',
+            'schema': { '$ref': '#/definitions/Notification' }
+        },
+        '404': {'description': 'No notifications found for this order.'}
+    }
+})
 def get_latest_status(order_id):
     notification = (
         Notifications.query.filter_by(order_id=order_id)
@@ -193,6 +271,26 @@ def get_latest_status(order_id):
 
 # Endpoint to get all updates for an order by ID
 @api.route('/order/<string:order_id>', methods=['GET'])
+@swag_from({
+    'tags': ['Notifications'],
+    'summary': 'Get all notification log entries for an order.',
+    'parameters': [
+        {
+            'name': 'order_id', 'in': 'path', 'type': 'string', 'required': True,
+            'description': 'The ID of the order.'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'List of notifications retrieved.',
+            'schema': {
+                'type': 'array',
+                'items': { '$ref': '#/definitions/Notification' }
+            }
+        },
+        '404': {'description': 'No notifications found for this order.'}
+    }
+})
 def get_all_updates(order_id):
     notifications = (
         Notifications.query.filter_by(order_id=order_id)

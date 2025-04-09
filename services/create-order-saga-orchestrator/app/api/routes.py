@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, current_app
+from flasgger import swag_from # Import swag_from
 from datetime import datetime
 from decimal import Decimal
 import json
@@ -13,8 +14,63 @@ logger = logging.getLogger(__name__)
 # Removed redundant /health route (it's defined in __init__.py)
 
 @saga_bp.route('/orders', methods=['POST'])
+@swag_from({
+    'tags': ['Saga'],
+    'summary': 'Start the Create Order Saga.',
+    'description': 'Initiates the asynchronous Create Order Saga workflow by sending the initial command.',
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['customer_id', 'order_details'],
+                'properties': {
+                    'customer_id': {'type': 'string', 'example': 'cust_123'},
+                    'order_details': {
+                        'type': 'object',
+                        'properties': {
+                            'foodItems': {
+                                'type': 'array',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'name': {'type': 'string'},
+                                        'price': {'type': 'number', 'format': 'float'},
+                                        'quantity': {'type': 'integer'}
+                                    }
+                                }
+                            },
+                            'storeLocation': {'type': 'string', 'nullable': True},
+                            'deliveryLocation': {'type': 'string'},
+                            'deliveryFee': {'type': 'number', 'format': 'float', 'description': 'Delivery fee calculated by frontend/caller'}
+                        }
+                    }
+                }
+            }
+        }
+    ],
+    'responses': {
+        '202': {
+            'description': 'Saga started successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'success': {'type': 'boolean', 'example': True},
+                    'message': {'type': 'string'},
+                    'saga_id': {'type': 'string', 'format': 'uuid'},
+                    'status': {'type': 'string', 'example': 'STARTED'}
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing fields, error calculating total, Kafka unavailable)'},
+        '500': {'description': 'Internal Server Error (e.g., orchestrator not initialized, unexpected error)'}
+    }
+})
 def create_order():
-    """Endpoint to start the create order saga"""
     # Access services from the current app context
     orchestrator = current_app.orchestrator
     
@@ -74,8 +130,37 @@ def create_order():
 
 
 @saga_bp.route('/sagas/<saga_id>', methods=['GET'])
+@swag_from({
+    'tags': ['Saga'],
+    'summary': 'Get the current state of a specific saga instance.',
+    'parameters': [
+        {
+            'name': 'saga_id', 'in': 'path', 'type': 'string', 'format': 'uuid', 'required': True,
+            'description': 'The ID of the saga instance.'
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Saga state retrieved.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'id': {'type': 'string', 'format': 'uuid'},
+                    'customer_id': {'type': 'string'},
+                    'order_id': {'type': 'string', 'format': 'uuid', 'nullable': True},
+                    'status': {'type': 'string', 'enum': [s.name for s in SagaStatus]},
+                    'current_step': {'type': 'string', 'enum': [s.name for s in SagaStep], 'nullable': True},
+                    'error': {'type': 'string', 'nullable': True},
+                    'created_at': {'type': 'string', 'format': 'date-time'},
+                    'updated_at': {'type': 'string', 'format': 'date-time'},
+                    'completed_at': {'type': 'string', 'format': 'date-time', 'nullable': True}
+                }
+            }
+        },
+        '404': {'description': 'Saga not found.'}
+    }
+})
 def get_saga_state(saga_id):
-    """Get the current state of a saga"""
     saga_state = CreateOrderSagaState.query.get(saga_id)
     if not saga_state:
         return jsonify({'success': False, 'error': 'Saga not found'}), 404
@@ -96,8 +181,40 @@ def get_saga_state(saga_id):
 
 
 @saga_bp.route('/sagas', methods=['GET'])
+@swag_from({
+    'tags': ['Saga'],
+    'summary': 'List recent saga instances.',
+    'description': 'Retrieves a list of the 100 most recent saga instances, optionally filtered by status.',
+    'parameters': [
+        {
+            'name': 'status', 'in': 'query', 'type': 'string', 'required': False,
+            'description': 'Filter sagas by status.',
+            'enum': [s.name for s in SagaStatus]
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'List of sagas retrieved.',
+            'schema': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'id': {'type': 'string', 'format': 'uuid'},
+                        'customer_id': {'type': 'string'},
+                        'order_id': {'type': 'string', 'format': 'uuid', 'nullable': True},
+                        'status': {'type': 'string', 'enum': [s.name for s in SagaStatus]},
+                        'current_step': {'type': 'string', 'enum': [s.name for s in SagaStep], 'nullable': True},
+                        'created_at': {'type': 'string', 'format': 'date-time'},
+                        'updated_at': {'type': 'string', 'format': 'date-time'}
+                    }
+                }
+            }
+        },
+        '400': {'description': 'Invalid status value provided.'}
+    }
+})
 def list_sagas():
-    """List all sagas with optional filtering"""
     status = request.args.get('status')
     
     query = CreateOrderSagaState.query
@@ -124,10 +241,31 @@ def list_sagas():
 
 
 @saga_bp.route('/sagas/<string:saga_id>/cancel', methods=['POST'])
+@swag_from({
+    'tags': ['Saga'],
+    'summary': 'Manually request cancellation of a saga.',
+    'description': 'Attempts to initiate the cancellation/compensation process for a specific saga instance. Only allowed if the saga is in a state where cancellation is potentially meaningful (e.g., STARTED, COMPENSATING, COMPLETED).',
+    'parameters': [
+        {
+            'name': 'saga_id', 'in': 'path', 'type': 'string', 'format': 'uuid', 'required': True,
+            'description': 'The ID of the saga instance to cancel.'
+        }
+    ],
+    'responses': {
+        '202': {
+            'description': 'Saga cancellation initiated successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {'message': {'type': 'string'}}
+            }
+        },
+        '404': {'description': 'Saga not found.'},
+        '409': {'description': 'Conflict - Saga cannot be cancelled in its current state.'},
+        '500': {'description': 'Internal Server Error (failed to initiate cancellation).'},
+        '503': {'description': 'Service unavailable (orchestrator not initialized).'}
+    }
+})
 def cancel_saga(saga_id):
-    """
-    Endpoint to manually request cancellation of a specific saga.
-    """
     logger = current_app.logger
     orchestrator = current_app.orchestrator
     

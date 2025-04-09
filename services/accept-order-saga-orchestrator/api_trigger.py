@@ -2,11 +2,13 @@ import os # Added for environment variables
 from temporalio.client import Client
 from flask import Flask, request, jsonify
 from flask_cors import CORS # Import CORS
+from flasgger import Swagger, swag_from # Import Swagger
 import asyncio
 from workflow import AcceptOrderWorkflow
 from datetime import timedelta
 
 app = Flask(__name__)
+swagger = Swagger(app) # Initialize Flasgger
 # More explicit CORS configuration
 CORS(
     app,
@@ -34,6 +36,42 @@ async def trigger_workflow(input_data):
 
 # Define a Flask route to trigger the workflow
 @app.route('/acceptOrder', methods=['POST'])
+@swag_from({
+    'tags': ['Workflow Trigger'],
+    'summary': 'Trigger the Accept Order Temporal Workflow.',
+    'description': 'Starts the asynchronous Accept Order workflow in Temporal.',
+    'consumes': ['application/json'],
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'schema': {
+                'type': 'object',
+                'required': ['order_id', 'runner_id'],
+                'properties': {
+                    'order_id': {'type': 'string', 'format': 'uuid'},
+                    'runner_id': {'type': 'string'}
+                }
+            }
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Workflow triggered successfully.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string'},
+                    'workflow_id': {'type': 'string'}
+                }
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., missing fields)'},
+        '500': {'description': 'Internal Server Error (failed to trigger workflow)'}
+    }
+})
 def trigger():
     input_data = request.json  # Get the JSON input from the request
     order_id = input_data.get("order_id")
@@ -52,6 +90,21 @@ def trigger():
 
 # Add a simple health check endpoint
 @app.route('/health', methods=['GET'])
+@swag_from({
+    'tags': ['Health'],
+    'summary': 'Health check for the Accept Order API Trigger.',
+    'responses': {
+        '200': {
+            'description': 'Service is healthy.',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'status': {'type': 'string', 'example': 'healthy'}
+                }
+            }
+        }
+    }
+})
 def health_check():
     return jsonify({"status": "healthy"}), 200
 

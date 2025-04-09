@@ -10,6 +10,7 @@ from app.services.kafka_service import (kafka_client,
                                         publish_payment_failed_event)
 from app.services.stripe_service import update_payment_status
 from flask import Blueprint, jsonify, request, current_app
+from flasgger import swag_from # Import swag_from
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -21,12 +22,49 @@ if not STRIPE_WEBHOOK_SECRET:
     logger.error("STRIPE_WEBHOOK_SECRET environment variable not set!")
 
 @webhook.route('/stripe-webhook', methods=['POST'])
+@swag_from({
+    'tags': ['Webhooks'],
+    'summary': 'Handle incoming Stripe webhook events.',
+    'description': 'Receives events from Stripe, verifies the signature, processes payment_intent events (succeeded, canceled, failed), updates local DB status, and publishes Kafka events (payment.authorized, payment.failed).',
+    'consumes': ['application/json'], # Stripe sends JSON
+    'produces': ['application/json'],
+    'parameters': [
+        {
+            'name': 'Stripe-Signature',
+            'in': 'header',
+            'required': True,
+            'type': 'string',
+            'description': 'Stripe webhook signature for verification.'
+        },
+        {
+            'in': 'body',
+            'name': 'body',
+            'required': True,
+            'description': 'Raw Stripe event payload (JSON).',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'id': {'type': 'string', 'example': 'evt_...'},
+                    'type': {'type': 'string', 'example': 'payment_intent.succeeded'},
+                    'data': {'type': 'object'},
+                    # ... other Stripe event fields
+                }
+            }
+        }
+    ],
+    'responses': {
+        '200': {
+            'description': 'Webhook received and acknowledged.',
+            'schema': {
+                'type': 'object',
+                'properties': {'received': {'type': 'boolean', 'example': True}}
+            }
+        },
+        '400': {'description': 'Bad Request (e.g., invalid payload, invalid signature)'},
+        '500': {'description': 'Internal Server Error (e.g., webhook secret not configured, processing error)'}
+    }
+})
 def stripe_webhook_handler():
-    """
-    Handles incoming Stripe webhook events.
-    Verifies the signature, processes relevant events, updates the database,
-    and publishes Kafka events if necessary.
-    """
     # Check if webhook secret is configured
     if not STRIPE_WEBHOOK_SECRET:
         logger.critical("Webhook processing failed: STRIPE_WEBHOOK_SECRET not configured.")
