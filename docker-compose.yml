@@ -46,6 +46,7 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
     depends_on:
       - notification-db # Only depend on notification-db
     networks:

@@ -1,0 +1,13 @@
+apiVersion: 1
+datasources:
+  - name: notification-db-source
+    type: postgres
+    url: notification-db
+    access: proxy
+    user: postgres
+    secureJsonData:
+      password: 'postgres'
+    jsonData:
+      database: notification_db
+      sslmode: 'disable' # disable/require/verify-ca/verify-full
+    editable: true
