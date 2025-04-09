@@ -37,7 +37,7 @@ The system follows a microservices architecture pattern. Key components and inte
 *   **External Services:**
     *   **Clerk:** Handles user authentication.
     *   **Stripe:** Processes payments and payouts.
-    *   **Timer Service (Outsystems):** Manages timers related to order acceptance/delivery deadlines (details of interaction might vary).
+    *   **Timer Service (Outsystems):** Manages timers related to order acceptance/delivery deadlines. Start, Stop and Cancel Timers.
 *   **Databases (PostgreSQL):** Used by individual services for data persistence.
 
 ## 3. Services Deep Dive
