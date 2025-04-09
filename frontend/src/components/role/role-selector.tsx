@@ -19,29 +19,29 @@ interface RoleOption {
 
 const roles: RoleOption[] = [
   {
-    id: 'customer',
-    title: 'Order Food',
-    description: 'Browse restaurants and place orders for delivery',
+    id: "customer",
+    title: "Order Food",
+    description: "Easily order from on-campus restaurants and stores near you!",
     icon: ShoppingBag,
-    path: '/customer/order',
+    path: "/customer/order",
     color: {
-      bg: 'bg-blue-50',
-      text: 'text-blue-600',
-      hover: 'hover:border-blue-500'
-    }
+      bg: "bg-blue-50",
+      text: "text-blue-600",
+      hover: "hover:border-blue-500",
+    },
   },
   {
-    id: 'runner',
-    title: 'Deliver Food',
-    description: 'Accept orders and earn money delivering food',
+    id: "runner",
+    title: "Deliver Food",
+    description: "Maximize your earnings: Deliver food when it works for you.",
     icon: Bike,
-    path: '/runner/available-orders',
+    path: "/runner/available-orders",
     color: {
-      bg: 'bg-green-50',
-      text: 'text-green-600',
-      hover: 'hover:border-green-500'
-    }
-  }
+      bg: "bg-green-50",
+      text: "text-green-600",
+      hover: "hover:border-green-500",
+    },
+  },
 ];
 
 export function RoleSelector() {

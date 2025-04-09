@@ -199,8 +199,8 @@ export function OrderHistoryPage() {
                 {/* Map over OrderStatusEnum keys for options */}
                 {Object.keys(OrderStatusEnum).map(statusKey => (
                   <option key={statusKey} value={statusKey}>
-                    {/* Format status names for display */}
-                    {statusKey.replace('_', ' ').charAt(0).toUpperCase() + statusKey.replace('_', ' ').slice(1).toLowerCase()}
+                    {/* Format status names for display - Replace all underscores */}
+                    {statusKey.replace(/_/g, ' ').charAt(0).toUpperCase() + statusKey.replace(/_/g, ' ').slice(1).toLowerCase()}
                   </option>
                 ))}
               </select>
