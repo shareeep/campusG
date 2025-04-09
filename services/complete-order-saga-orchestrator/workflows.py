@@ -15,7 +15,7 @@ class Compensations:
             try:
                 await workflow.execute_activity(
                     compensation["activity"],
-                    args=[*compensation["args"]],
+                    args=[compensation["args"]],
                     start_to_close_timeout=timedelta(seconds=10)
                 )
             except Exception as e:
