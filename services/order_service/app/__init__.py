@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS # Import CORS
-from flask_migrate import Migrate # Uncomment Migrate import
+# from flask_migrate import Migrate
 import logging
 
 # Configure logging
@@ -12,7 +12,7 @@ logging.basicConfig(
 
 # Initialize extensions
 db = SQLAlchemy()
-migrate = Migrate() # Uncomment Migrate initialization
+# migrate = Migrate()
 
 # Import config here to avoid circular imports
 from app.config.config import Config
@@ -23,7 +23,7 @@ def create_app(config_class=Config):
 
     # Initialize extensions with app
     db.init_app(app)
-    migrate.init_app(app, db) # Uncomment Migrate initialization with app
+    # migrate.init_app(app, db)
 
     # Initialize CORS - Allow requests from frontend origin with specific headers/methods
     CORS(

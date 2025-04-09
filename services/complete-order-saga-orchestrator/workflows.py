@@ -33,10 +33,19 @@ class CompleteOrderWorkflow:
         clerk_user_id = input_data.get("clerk_user_id", "Unknown")
         compensation = Compensations()
         try:
-            # Removed redundant update to 'DELIVERED' status.
-            # Workflow assumes order is already DELIVERED when triggered.
-            # Removed corresponding compensation for the DELIVERED update.
-
+            # Step 2: Update order status to 'Delivered'
+            compensation += {
+                                "activity": "rollback_update_order_status",
+                                "args": (order_id, "CANCELLED")
+                            }
+            updated = await workflow.execute_activity(
+                "update_order_status",  # Activity name must be a string
+                args=[order_id, "DELIVERED"],
+                start_to_close_timeout=timedelta(seconds=10)
+            )
+            if not updated:
+                raise Exception("Failed to update order to Delivered")
+            
             stripe_connect_id = await workflow.execute_activity(
                 "get_user_stripe_connect",
                 clerk_user_id,
@@ -64,17 +73,11 @@ class CompleteOrderWorkflow:
             )
             if not funds_released:
                 raise Exception("Failed to release funds")
-
-            # Add compensation for the COMPLETED status update
-            # If completion fails, roll back status (e.g., to DELIVERED)
-            compensation += {
-                                "activity": "rollback_update_order_status",
-                                "args": (order_id, "DELIVERED") # Rollback COMPLETED to DELIVERED
-                            }
-            # Update order status to 'COMPLETED'
+            
+                    # Step 2: Update order status to 'Delivered'
             updated = await workflow.execute_activity(
-                "update_order_status",
-                args=[order_id, "COMPLETED"], # Final status update
+                "update_order_status",  # Activity name must be a string
+                args=[order_id, "COMPLETED"],
                 start_to_close_timeout=timedelta(seconds=10)
             )
             if not updated:
@@ -85,3 +88,4 @@ class CompleteOrderWorkflow:
         except Exception as e:
             print(f"Error occurred: {e}. Triggering rollback...")
             await compensation.compensate()
+
