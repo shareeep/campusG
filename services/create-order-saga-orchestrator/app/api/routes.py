@@ -172,9 +172,18 @@ def cancel_saga(saga_id):
 
 
 def calculate_total(order_details):
-    """Calculate the total amount for the order"""
+    """Calculate the total amount for the order using fees from order_details"""
     food_total = calculate_food_total(order_details.get('foodItems', []))
-    delivery_fee = calculate_delivery_fee(order_details.get('deliveryLocation', ''))
+    # Extract delivery fee directly from order_details
+    input_delivery_fee = order_details.get('deliveryFee', None)
+    try:
+        # Use Decimal for precision, default to 0 if conversion fails or input is None/invalid
+        delivery_fee = Decimal(str(input_delivery_fee)) if input_delivery_fee is not None else Decimal('0.00')
+    except (TypeError, ValueError):
+        logger.warning(f"Invalid deliveryFee '{input_delivery_fee}' in order_details. Defaulting to 0 for total calculation.")
+        delivery_fee = Decimal('0.00')
+        
+    logger.info(f"Calculating total: Food={food_total}, Delivery={delivery_fee}")
     return food_total + delivery_fee
 
 

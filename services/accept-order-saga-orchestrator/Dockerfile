@@ -8,9 +8,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV FLASK_APP=run.py
+# ENV FLASK_APP=run.py # Removed as run.py is removed
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 3000
 
-CMD ["flask", "run", "--host=0.0.0.0", "--port=3000"]
+# CMD instruction removed - command will be specified in docker-compose.yml

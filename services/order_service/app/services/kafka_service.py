@@ -328,11 +328,21 @@ def handle_create_order_command(correlation_id, payload):
             # kafka_client.publish_event('order.creation_failed', {'error': 'Missing fields'}, correlation_id)
             return
 
-        # Reuse calculation logic from API routes
+        # Extract details from payload
         food_items = order_details.get('foodItems', [])
         delivery_location = order_details.get('deliveryLocation', '')
+        store_location = order_details.get('storeLocation', None) # Extract store location
+        input_delivery_fee = order_details.get('deliveryFee', None) # Extract delivery fee
+
+        # Calculate food fee
         food_fee = calculate_food_total(food_items)
-        delivery_fee = calculate_delivery_fee(delivery_location)
+        
+        # Use extracted delivery fee
+        try:
+            delivery_fee = Decimal(str(input_delivery_fee)) if input_delivery_fee is not None else Decimal('0.00')
+        except (TypeError, ValueError):
+             logger.warning(f"Invalid deliveryFee '{input_delivery_fee}' received in Kafka command for saga {correlation_id}. Defaulting to 0.")
+             delivery_fee = Decimal('0.00')
 
         # Create a new order
         order = Order(
@@ -340,7 +350,8 @@ def handle_create_order_command(correlation_id, payload):
             cust_id=customer_id,
             order_description=json.dumps(food_items),
             food_fee=food_fee,
-            delivery_fee=delivery_fee,
+            delivery_fee=delivery_fee, # Use extracted fee
+            store_location=store_location, # Add extracted store location
             delivery_location=delivery_location,
             order_status=OrderStatus.PENDING, # Initial status for saga-created orders
             saga_id=saga_id # Store the saga ID for reference

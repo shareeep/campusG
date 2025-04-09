@@ -7,3 +7,4 @@ python-dotenv==1.0.0
 kafka-python==2.0.2
 Werkzeug==2.2.3
 APScheduler==3.10.4 # Added for background polling task
+Flask-CORS==4.0.0 # Added for CORS support

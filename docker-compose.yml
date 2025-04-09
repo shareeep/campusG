@@ -1,6 +1,7 @@
 services:
   # Kafka infrastructure
   zookeeper:
+    container_name: campusg-zookeeper # Added container name
     image: confluentinc/cp-zookeeper:7.3.2
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -38,8 +39,30 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-  # Individual Databases for each microservice 
+
+  # Temporal Database (Integrated)
+  temporal-db:
+    image: postgres:${POSTGRESQL_VERSION:-16} # Use version from .env or default
+    container_name: campusg-temporal-db # Updated container name
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-temporal} # Use from .env or default
+      POSTGRES_USER: ${POSTGRES_USER:-temporal} # Use from .env or default
+      POSTGRES_DB: temporal # Default DB name for temporal server
+    volumes:
+      - temporal_db_data:/var/lib/postgresql/data # Use named volume
+    ports:
+      - "5450:5432" # Keep original port mapping
+    networks: # Connect to default network
+      - default
+    healthcheck: # Added healthcheck
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-temporal}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Individual Databases for each microservice
   user-db:
+    container_name: campusg-user-db # Added container name
     image: postgres:14
     environment:
       POSTGRES_USER: postgres
@@ -56,6 +79,7 @@ services:
       retries: 5
 
   order-db:
+    container_name: campusg-order-db # Added container name
     image: postgres:14
     environment:
       POSTGRES_USER: postgres
@@ -72,6 +96,7 @@ services:
       retries: 5
 
   payment-db:
+    container_name: campusg-payment-db # Added container name
     image: postgres:14
     environment:
       POSTGRES_USER: postgres
@@ -88,6 +113,7 @@ services:
       retries: 5
 
   notification-db:
+    container_name: campusg-notification-db # Added container name
     image: postgres:14
     environment:
       POSTGRES_USER: postgres
@@ -104,6 +130,7 @@ services:
       retries: 5
 
   create-order-saga-db:
+    container_name: campusg-create-order-saga-db # Added container name
     image: postgres:14
     environment:
       POSTGRES_USER: postgres
@@ -119,41 +146,12 @@ services:
       timeout: 5s
       retries: 5
 
-  accept-order-saga-db:
-    image: postgres:14
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: accept_order_saga_db
-    volumes:
-      - accept_order_saga_db_data:/var/lib/postgresql/data
-    ports:
-      - "5440:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  complete-order-saga-db:
-    image: postgres:14
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: complete_order_saga_db
-    volumes:
-      - complete_order_saga_db_data:/var/lib/postgresql/data
-    ports:
-      - "5441:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # accept-order-saga-db removed as it's not needed
 
   # Microservices
   user-service:
-    build: 
+    container_name: campusg-user-service # Added container name
+    build:
       context: ./services/user-service
       dockerfile: Dockerfile
       args:
@@ -187,6 +185,7 @@ services:
       start_period: 60s # Increased start period
 
   order-service:
+    container_name: campusg-order-service # Added container name
     build:
       context: ./services/order_service
     environment:
@@ -212,6 +211,7 @@ services:
       start_period: 60s # Increased start period
 
   payment-service:
+    container_name: campusg-payment-service # Added container name
     build:
       context: ./services/payment-service
       dockerfile: Dockerfile
@@ -245,6 +245,7 @@ services:
       start_period: 60s # Increased start period
 
   notification-service:
+    container_name: campusg-notification-service # Added container name
     build:
       context: ./services/notification-service
       dockerfile: Dockerfile
@@ -273,6 +274,7 @@ services:
 
   # Saga Orchestrator Services
   create-order-saga-orchestrator:
+    container_name: campusg-create-order-saga-orchestrator # Added container name
     build:
       context: ./services/create-order-saga-orchestrator
     environment:
@@ -307,37 +309,148 @@ services:
       retries: 3
       start_period: 60s # Increased start period
 
-  accept-order-saga-orchestrator:
+  # Saga Services (Updated)
+  accept-order-saga-api: # Renamed from accept-order-saga-orchestrator
+    container_name: campusg-accept-order-saga-api # Updated container name
     build:
       context: ./services/accept-order-saga-orchestrator
+      dockerfile: Dockerfile # Specify Dockerfile
+    command: python api_trigger.py # Set command
+    ports:
+      - "${ACCEPT_ORDER_API_PORT:-3102}:3000" # Updated port mapping variable
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@accept-order-saga-db:5432/accept_order_saga_db
+      # Removed DATABASE_URL, FLASK_APP, FLASK_DEBUG
+      - DEBUG=${DEBUG:-False} # Added DEBUG
+      - PYTHONUNBUFFERED=1 # Added PYTHONUNBUFFERED
+      - TEMPORAL_GRPC_ENDPOINT=temporal:7233 # Added Temporal endpoint
+      # Updated Service URLs (ensure they match actual needs)
       - USER_SERVICE_URL=http://user-service:3000
       - ORDER_SERVICE_URL=http://order-service:3000
       - NOTIFICATION_SERVICE_URL=http://notification-service:3000
-      - FLASK_APP=run.py
-      - FLASK_DEBUG=0  # Use this instead of FLASK_ENV=production
+      # - KAFKA_BROKERS=kafka:9092 # Add if needed by API
     depends_on:
-      accept-order-saga-db:
-        condition: service_healthy
+      # Removed accept-order-saga-db
+      temporal: # Added dependency on integrated temporal
+        condition: service_started
       user-service:
         condition: service_started
       order-service:
         condition: service_started
       notification-service:
         condition: service_started
-    ports:
-      - "3102:3000"
+    networks: # Ensure only default network
+      - default
+    healthcheck: # Added healthcheck
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"] # Check internal port 3000
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped # Added restart policy
 
-  complete-order-saga-orchestrator:
+  accept-order-saga-worker: # Added worker service
+    container_name: campusg-accept-order-saga-worker
+    build:
+      context: ./services/accept-order-saga-orchestrator
+      dockerfile: Dockerfile
+    command: python worker.py
+    environment:
+      - DEBUG=${DEBUG:-False}
+      - PYTHONUNBUFFERED=1
+      - TEMPORAL_GRPC_ENDPOINT=temporal:7233
+      - USER_SERVICE_URL=http://user-service:3000
+      - ORDER_SERVICE_URL=http://order-service:3000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      # - KAFKA_BROKERS=kafka:9092 # Add if needed by worker/activities
+    depends_on:
+      temporal:
+        condition: service_started
+      # Add dependencies based on actual activity needs
+      order-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      # kafka: # Add if needed
+      #   condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
+
+  # Temporal Services (Integrated)
+  temporal:
+    image: temporalio/auto-setup:${TEMPORAL_VERSION:-1.27.2} # Use version from .env or default
+    container_name: campusg-temporal # Updated container name
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-temporal}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-temporal}
+      - POSTGRES_SEEDS=temporal-db # Use renamed DB service name
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    depends_on:
+      temporal-db: # Depend on renamed DB service
+        condition: service_healthy
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig # Adjusted path relative to root
+    networks: # Connect to default network
+      - default
+    restart: unless-stopped # Added restart policy
+
+  temporal-ui:
+    image: temporalio/ui:${TEMPORAL_UI_VERSION:-2.34.0} # Use version from .env or default
+    container_name: campusg-temporal-ui # Updated container name
+    ports:
+      - "8080:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233 # Correct internal address
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000 # Adjust if your frontend runs elsewhere
+    depends_on:
+      - temporal
+    networks: # Connect to default network
+      - default
+    restart: unless-stopped # Added restart policy
+
+  temporal-admin-tools:
+    image: temporalio/admin-tools:${TEMPORAL_ADMINTOOLS_VERSION:-1.27.2-tctl-1.18.2-cli-1.3.0} # Use version from .env or default
+    container_name: campusg-temporal-admin-tools # Updated container name
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233 # Correct internal address
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    stdin_open: true
+    tty: true
+    networks: # Connect to default network
+      - default
+
+  # Saga Services (Updated for integrated Temporal)
+  complete-order-saga-api:
     build:
       context: ./services/complete-order-saga-orchestrator
       dockerfile: Dockerfile
+    container_name: campusg-complete-order-saga-api # Updated container name
+    command: python api_trigger.py # Added command
     ports:
-      - "3103:5000"
+      - "${COMPLETE_ORDER_API_PORT:-3103}:5000" # Updated port mapping variable
     environment:
+      - DEBUG=${DEBUG:-False} # Added DEBUG
       - PYTHONUNBUFFERED=1
-    depends_on:
+      - TEMPORAL_GRPC_ENDPOINT=temporal:7233 # Added Temporal endpoint
+      # Added Service URLs
+      - USER_SERVICE_URL=http://user-service:3000
+      - ORDER_SERVICE_URL=http://order-service:3000
+      - PAYMENT_SERVICE_URL=http://payment-service:3000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - KAFKA_BROKERS=kafka:9092 # Added Kafka brokers (internal listener)
+    depends_on: # Removed complete-order-saga-db dependency
+      # kafka: # Add if API needs direct Kafka access
+      #   condition: service_healthy
+      temporal: # Added dependency on integrated temporal
+        condition: service_started
       user-service:
         condition: service_started
       order-service:
@@ -346,7 +459,47 @@ services:
         condition: service_started
       notification-service:
         condition: service_started
+    networks: # Removed temporal-net
+      - default
+    healthcheck: # Added healthcheck for the API service
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"] # Check internal port 5000
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s # Give time for Flask to start
+    restart: unless-stopped
 
+  complete-order-saga-worker:
+    build:
+      context: ./services/complete-order-saga-orchestrator
+      dockerfile: Dockerfile
+    container_name: campusg-complete-order-saga-worker # Updated container name
+    command: python worker.py # Run the worker script
+    environment: # Same environment variables as the API (excluding DB)
+      - DEBUG=${DEBUG:-False}
+      - PYTHONUNBUFFERED=1
+      - TEMPORAL_GRPC_ENDPOINT=temporal:7233
+      - USER_SERVICE_URL=http://user-service:3000
+      - ORDER_SERVICE_URL=http://order-service:3000
+      - PAYMENT_SERVICE_URL=http://payment-service:3000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - KAFKA_BROKERS=kafka:9092
+    depends_on: # Worker depends on Kafka and services its activities call
+      kafka:
+        condition: service_healthy
+      user-service:
+        condition: service_started # Or service_healthy if it has a healthcheck
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      temporal: # Added dependency on integrated temporal
+        condition: service_started
+    networks: # Removed temporal-net
+      - default
+    restart: unless-stopped
 
 volumes:
   user_db_data:
@@ -354,5 +507,10 @@ volumes:
   payment_db_data:
   notification_db_data:
   create_order_saga_db_data:
-  accept_order_saga_db_data:
-  complete_order_saga_db_data:
+  # accept_order_saga_db_data: # Removed volume
+  temporal_db_data:
+
+# Updated Networks Section
+networks:
+  default:
+    driver: bridge

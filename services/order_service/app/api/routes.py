@@ -22,24 +22,38 @@ def health_check():
 def get_orders():
     """Get all orders"""
     try:
-        # Remove pagination logic:
-        # page = request.args.get('page', 1, type=int)
-        # limit = request.args.get('limit', 10, type=int)
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 10, type=int)
+        status_filter = request.args.get('status', None, type=str) # Get optional status filter
+        runner_id_filter = request.args.get('runnerId', None, type=str) # Get optional runnerId filter
 
-        # Get all orders without pagination
-        # orders = Order.query.paginate(page=page, per_page=limit) # Old line
-        orders = Order.query.all() # New line: Fetch all orders
+        # Base query
+        query = Order.query
 
-        # Update the result structure to just return the list of items
-        # result = {
-        #     'items': [order.to_dict() for order in orders.items],
-        #     'total': orders.total,
-        #     'pages': orders.pages,
-        #     'page': page
-        # } # Old result structure
+        # Apply status filter if provided
+        if status_filter:
+            try:
+                status_enum = OrderStatus[status_filter.upper()]
+                query = query.filter(Order.order_status == status_enum)
+            except KeyError:
+                # Handle invalid status gracefully, maybe return empty or error
+                return jsonify({'error': f'Invalid status value: {status_filter}'}), 400
+        
+        # Apply runnerId filter if provided
+        if runner_id_filter:
+            query = query.filter(Order.runner_id == runner_id_filter)
 
-        result = [order.to_dict() for order in orders] # New result: simple list
+        # Add ordering and pagination
+        orders_paginated = query.order_by(Order.created_at.desc()).paginate(page=page, per_page=limit, error_out=False)
 
+        result = {
+            'items': [order.to_dict() for order in orders_paginated.items],
+            'total': orders_paginated.total, # Use total from paginated object
+            'pages': orders_paginated.pages, # Use pages from paginated object
+            'page': page
+            # Removed duplicate/incorrect 'total' and 'pages' keys referencing 'orders'
+        }
+        
         return jsonify(result), 200
     except Exception as e:
         current_app.logger.error(f"Error getting orders: {str(e)}")
@@ -65,6 +79,31 @@ def get_order_details():
         current_app.logger.error(f"Error getting order {order_id}: {str(e)}")
         return jsonify({'error': 'Failed to retrieve order'}), 500
 
+
+@api.route('/orders/customer/<customer_id>', methods=['GET'])
+def get_customer_orders(customer_id):
+    """Get all orders for a specific customer"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 10, type=int)
+        
+        # Query orders filtering by customer_id and paginate
+        orders_query = Order.query.filter_by(cust_id=customer_id).order_by(Order.created_at.desc())
+        orders_paginated = orders_query.paginate(page=page, per_page=limit, error_out=False) # error_out=False prevents 404 on empty pages
+        
+        result = {
+            'items': [order.to_dict() for order in orders_paginated.items],
+            'total': orders_paginated.total,
+            'pages': orders_paginated.pages,
+            'page': page
+        }
+        
+        return jsonify(result), 200
+    except Exception as e:
+        current_app.logger.error(f"Error getting orders for customer {customer_id}: {str(e)}")
+        return jsonify({'error': 'Failed to retrieve customer orders'}), 500
+
+
 # order.created
 @api.route('/createOrder', methods=['POST'])
 def create_order():
@@ -81,13 +120,26 @@ def create_order():
         if not customer_id or not order_details:
             return jsonify({'error': 'Missing required fields: customer_id or order_details'}), 400
         
-        # Calculate amounts
+        # Calculate amounts and get locations
         food_items = order_details.get('foodItems', [])
+        store_location = order_details.get('storeLocation', None) # Get store location
         delivery_location = order_details.get('deliveryLocation', '')
         
         food_fee = calculate_food_total(food_items)
-        delivery_fee = calculate_delivery_fee(delivery_location)
-        
+        # Use deliveryFee from input if provided, otherwise default or calculate (adjust logic as needed)
+        # Assuming order_details contains 'deliveryFee' from the saga payload
+        input_delivery_fee = order_details.get('deliveryFee', None) 
+        # Convert to Decimal, handle potential errors or None
+        try:
+            # Use Decimal for precision, default to 0 if conversion fails or input is None
+            delivery_fee = Decimal(input_delivery_fee) if input_delivery_fee is not None else Decimal('0.00') 
+        except (TypeError, ValueError):
+             # Fallback if conversion fails - could log a warning
+             current_app.logger.warning(f"Invalid deliveryFee '{input_delivery_fee}' received for order. Defaulting to 0.")
+             delivery_fee = Decimal('0.00') 
+             # Alternatively, could recalculate here as a fallback:
+             # delivery_fee = calculate_delivery_fee(delivery_location)
+
         # Create a new order
         order = Order(
             order_id=str(uuid.uuid4()),
@@ -95,6 +147,7 @@ def create_order():
             order_description=json.dumps(food_items),
             food_fee=food_fee,
             delivery_fee=delivery_fee,
+            store_location=store_location, # Add store location here
             delivery_location=delivery_location,
             order_status=OrderStatus.PENDING
         )
@@ -388,6 +441,72 @@ def cancel_acceptance():
         current_app.logger.error(f"Error cancelling order acceptance: {str(e)}", exc_info=True)
         return jsonify({'error': f"Failed to cancel order acceptance: {str(e)}"}), 500
 
+@api.route('/clearRunner', methods=['POST'])
+def clear_runner():
+    """
+    Clear the runner_id for a specific order, setting it to null.
+    This typically reverts the order status to CREATED if it was ACCEPTED.
+
+    Expected JSON input:
+    {
+        "orderId": "order-uuid"
+    }
+
+    Returns:
+    {
+        "message": "Runner cleared successfully",
+        "order": {order object}
+    }
+    """
+    try:
+        data = request.json
+        if not data or 'orderId' not in data:
+            return jsonify({'error': 'Missing required field: orderId'}), 400
+
+        order_id = data['orderId']
+
+        # Retrieve the order from the database
+        order = Order.query.get(order_id)
+        if not order:
+            return jsonify({'error': 'Order not found'}), 404
+
+        # Optional: Add logic to check if the order status allows clearing the runner.
+        # For consistency with cancelAcceptance, let's only allow clearing if ACCEPTED.
+        if order.order_status != OrderStatus.ACCEPTED:
+             return jsonify({
+                 'error': f"Runner cannot be cleared in status: {order.order_status.name}. Use cancelAcceptance or similar."
+             }), 400
+
+        # Store the current runner_id for event logging
+        runner_id = order.runner_id
+
+        # Clear the runner_id and revert status to CREATED
+        order.runner_id = None
+        order.order_status = OrderStatus.CREATED # Revert status like cancelAcceptance
+        db.session.commit()
+
+        # Publish event using the correct method
+        # Consider a specific event type like 'ORDER_RUNNER_CLEARED'
+        kafka_client.publish_event(
+            'ORDER_RUNNER_CLEARED', # New event type
+            {
+                'customerId': order.cust_id,
+                'runnerId': runner_id, # Log the runner who was cleared
+                'orderId': order.order_id,
+                'status': 'runnerCleared', # New status description
+                'event': json.dumps(order.to_dict())
+            }
+        )
+
+        return jsonify({
+            'message': 'Runner cleared successfully',
+            'order': order.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error clearing runner for order: {str(e)}", exc_info=True)
+        return jsonify({'error': f"Failed to clear runner: {str(e)}"}), 500
 
 @api.route('/completeOrder', methods=['POST'])
 def complete_order():
