@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Package, Truck, CheckCircle2, Loader2, User } from 'lucide-react'; // Removed Clock, MessageSquare
+import { Package, Truck, CheckCircle2, Loader2, User, Ban } from 'lucide-react'; // Added Ban for cancel button
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { getOrder, confirmDelivery, cancelSaga } from '@/lib/api'; // Added cancelSaga import
@@ -419,7 +419,13 @@ export function OrderTrackingPage() {
 
             {/* Order Timeline - Uses adapted steps */}
             <div className="mb-6">
-              <h2 className="text-lg font-semibold mb-4">Order Status: {orderData.orderStatus}</h2>
+              <h2 className="text-lg font-semibold mb-4">
+                Order Status: {orderData.orderStatus
+                                .toLowerCase()
+                                .split('_')
+                                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                .join(' ')}
+              </h2>
               <div className="relative">
                 <div className="absolute left-4 top-4 bottom-4 w-0.5 bg-gray-200" aria-hidden="true"></div>
                 {steps.map((step, index) => (
