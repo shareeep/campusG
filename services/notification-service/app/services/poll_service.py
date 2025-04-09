@@ -154,6 +154,7 @@ def poll_kafka_once():
                     customer_id = str(payload.get('customer_id', payload.get('customerId', '')))
                     runner_id = str(payload.get('runner_id', payload.get('runnerId', '')))
                     order_id = str(payload.get('order_id', payload.get('orderId', '')))
+                    status_ = str(payload.get('status', payload.get('status', '')))
                     
                     # Format event info
                     event_info = {
@@ -165,25 +166,34 @@ def poll_kafka_once():
                         'payload': payload
                     }
                     
-                    # Create notification
-                    notification = Notifications(
-                        customer_id=customer_id if customer_id not in ('None', 'null', '') else '',
-                        runner_id=runner_id if runner_id not in ('None', 'null', '') else None,
-                        order_id=order_id if order_id not in ('None', 'null', '') else '',
-                        event=json.dumps(event_info),
-                        status='captured',
-                        source_topic=topic,
-                        event_type=event_type,
+                    # Replace the existing "Create notification" block with this:
+                    existing_notification = Notifications.query.filter_by(
                         correlation_id=correlation_id,
-                        source_service=source_service
-                    )
-                    
-                    db.session.add(notification)
-                    
-                    # Update stored offset
+                        event_type=event_type,
+                        source_topic=topic
+                    ).first()
+
+                    if not existing_notification:
+                        notification = Notifications(
+                            customer_id=customer_id if customer_id not in ('None', 'null', '') else '',
+                            runner_id=runner_id if runner_id not in ('None', 'null', '') else None,
+                            order_id=order_id if order_id not in ('None', 'null', '') else '',
+                            event=json.dumps(event_info),
+                            status=status_ if status_ not in ('None', 'null', '') else None,
+                            source_topic=topic,
+                            event_type=event_type,
+                            correlation_id=correlation_id,
+                            source_service=source_service
+                        )
+                        
+                        db.session.add(notification)
+                        messages_processed += 1
+                    else:
+                        logger.debug(f"Skipping duplicate notification: {correlation_id}, {event_type}")
+
+                    # Still update the offset regardless
                     update_stored_offset(topic, partition, message.offset)
-                    
-                    messages_processed += 1
+
                     logger.debug(f"Processed message from {topic} with event type {event_type}")
                     
                 except Exception as e:
@@ -191,12 +201,19 @@ def poll_kafka_once():
                     db.session.rollback()
                 
             # Commit session after processing batch for partition
+            # Replace your existing commit block with this:
             try:
                 db.session.commit()
                 logger.info(f"Committed {messages_processed} notifications to database")
             except Exception as e:
-                logger.error(f"Error committing session: {e}", exc_info=True)
-                db.session.rollback()
+                if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
+                    logger.info("Duplicate records detected and skipped")
+                    db.session.rollback()
+                    # Still need to update offsets even if we skipped duplicates
+                    db.session.commit()
+                else:
+                    logger.error(f"Error committing session: {e}", exc_info=True)
+                    db.session.rollback()
                 
         consumer.close()
         logger.info(f"Kafka polling cycle completed, processed {messages_processed} messages")

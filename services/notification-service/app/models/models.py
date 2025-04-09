@@ -24,7 +24,7 @@ class Notifications(db.Model):
     runner_id = db.Column(db.String(255), nullable=True, index=True)  # Optional runner ID
     order_id = db.Column(db.String(255), nullable=True, index=True, default="")  # Allow empty order ID for non-order events
     event = db.Column(db.Text, nullable=False)  # JSON or stringified object containing the full event
-    status = db.Column(db.String(50), nullable=False, default="pending")  # Status of the notification
+    status = db.Column(db.String(50), nullable=False, default="unavailable")  # Status of the notification
     created_at = db.Column(db.DateTime, default=datetime.utcnow)  # Timestamp for creation
     
     # Additional fields for Kafka metadata
@@ -32,6 +32,12 @@ class Notifications(db.Model):
     event_type = db.Column(db.String(255), nullable=True)  # The type of event (from the message)
     correlation_id = db.Column(db.String(255), nullable=True)  # The correlation ID (if any)
     source_service = db.Column(db.String(255), nullable=True)  # The source service that sent the message
+
+    # Add this constraint right here
+    __table_args__ = (
+        db.UniqueConstraint('correlation_id', 'event_type', 'source_topic', name='uq_notification_identifier'),
+    )
+
 
     def to_dict(self):
         """Convert the model to a dictionary."""

@@ -131,6 +131,7 @@ def consume_kafka_events():
                 customer_id = str(payload.get('customer_id', payload.get('customerId', '')))
                 runner_id = str(payload.get('runner_id', payload.get('runnerId', '')))
                 order_id = str(payload.get('order_id', payload.get('orderId', '')))
+                status_ = str(payload.get('status_id', payload.get('statusId', '')))
                 
                 # Format event information
                 event_info = {
@@ -148,7 +149,7 @@ def consume_kafka_events():
                     runner_id=runner_id if runner_id not in ('None', 'null', '') else None,
                     order_id=order_id if order_id not in ('None', 'null', '') else '',
                     event=json.dumps(event_info),
-                    status='captured',
+                    status=status_ if status_ not in ('None', 'null', '') else None,
                     source_topic=topic,
                     event_type=event_type,
                     correlation_id=correlation_id,

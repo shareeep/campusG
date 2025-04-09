@@ -40,6 +40,17 @@ services:
       retries: 5
       start_period: 30s
 
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - notification-db # Only depend on notification-db
+    networks:
+      - default #use the default network that is already created.
+
   # Temporal Database (Integrated)
   temporal-db:
     image: postgres:${POSTGRESQL_VERSION:-16} # Use version from .env or default
@@ -509,6 +520,7 @@ volumes:
   create_order_saga_db_data:
   # accept_order_saga_db_data: # Removed volume
   temporal_db_data:
+  grafana-data:
 
 # Updated Networks Section
 networks:
