@@ -7,7 +7,14 @@ from workflows import CompleteOrderWorkflow
 from datetime import timedelta
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173"]) # Enable CORS for the frontend origin
+# More explicit CORS configuration
+CORS(
+    app,
+    origins=["http://localhost:5173"],
+    methods=["GET", "POST", "OPTIONS"], # Allow relevant methods + OPTIONS
+    allow_headers=["Content-Type", "Authorization"], # Allow common headers
+    supports_credentials=True # Allow cookies if needed
+)
 
 # Define the async function to start a workflow
 async def trigger_workflow(input_data):

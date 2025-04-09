@@ -88,8 +88,8 @@ export function AvailableOrdersPage() {
 
     try {
       const token = await getToken();
-      // Call the accept order saga orchestrator with the correct prefixed path
-      const response = await fetch('http://localhost:3102/saga/accept/acceptOrder', {
+      // Call the accept order saga orchestrator with the correct path
+      const response = await fetch('http://localhost:3102/acceptOrder', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

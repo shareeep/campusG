@@ -12,8 +12,14 @@ def create_app(config=None):
     """Create and configure the Flask application"""
     app = Flask(__name__)
 
-    # Initialize CORS - Allow requests from frontend origin
-    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+    # Initialize CORS - Allow requests from frontend origin with explicit methods/headers
+    CORS(
+        app,
+        resources={r"/*": {"origins": "http://localhost:5173"}},
+        methods=["GET", "POST", "OPTIONS"], # Allow relevant methods + OPTIONS
+        allow_headers=["Content-Type", "Authorization"], # Allow common headers
+        supports_credentials=True # Allow cookies if needed
+    )
     
     # Load default configuration
     app.config.from_mapping(
