@@ -215,12 +215,23 @@ def update_order_status_action():
         if not order:
             return jsonify({'error': 'Order not found'}), 404
 
-        # Update the order's status
+        # Update the order's status and corresponding timestamp
         order.order_status = new_status
-        
-        # If the new status is COMPLETED, update the completed_at timestamp
-        if new_status == OrderStatus.COMPLETED:
-            order.completed_at = db.func.now()
+        timestamp_now = db.func.now() # Get current time once
+
+        if new_status == OrderStatus.ACCEPTED:
+            order.accepted_at = timestamp_now
+        elif new_status == OrderStatus.PLACED:
+            order.placed_at = timestamp_now
+        elif new_status == OrderStatus.ON_THE_WAY:
+            order.picked_up_at = timestamp_now
+        elif new_status == OrderStatus.DELIVERED:
+            order.delivered_at = timestamp_now
+        elif new_status == OrderStatus.COMPLETED:
+            order.completed_at = timestamp_now
+        elif new_status == OrderStatus.CANCELLED:
+            order.cancelled_at = timestamp_now
+        # PENDING and CREATED are usually handled at creation or by other specific routes
 
         db.session.commit()
 
@@ -288,9 +299,10 @@ def accept_order():
         if order.runner_id:
             return jsonify({'error': 'Order already accepted by another runner'}), 400
 
-        # Update the order: assign runner_id and set status to ACCEPTED
+        # Update the order: assign runner_id, set status to ACCEPTED, and set accepted_at timestamp
         order.runner_id = runner_id
         order.order_status = OrderStatus.ACCEPTED
+        order.accepted_at = db.func.now() # Set specific timestamp
         db.session.commit()
 
         # Publish event using the correct method
@@ -349,8 +361,9 @@ def cancel_order():
         if order.order_status != OrderStatus.CREATED:
             return jsonify({'error': f"Order cannot be cancelled in status: {order.order_status.name}"}), 400
 
-        # Update the order's status to CANCELLED
+        # Update the order's status to CANCELLED and set cancelled_at timestamp
         order.order_status = OrderStatus.CANCELLED
+        order.cancelled_at = db.func.now() # Set specific timestamp
         db.session.commit()
 
         # Publish event using the correct method
@@ -535,7 +548,7 @@ def complete_order():
 
         # Update the order status and set the completion timestamp
         order.order_status = OrderStatus.COMPLETED
-        order.completed_at = db.func.now()
+        order.completed_at = db.func.now() # Set specific timestamp
         db.session.commit()
 
         # Publish event using the correct method
