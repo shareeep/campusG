@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-// Removed unused useNavigate import
+import { useNavigate } from "react-router-dom"; // Import useNavigate
 import { MapPin, Package, Loader2, Store } from "lucide-react"; // Added Store icon
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -34,7 +34,7 @@ interface ParsedItem {
 
 
 export function AvailableOrdersPage() {
-  // Removed unused navigate variable
+  const navigate = useNavigate(); // Initialize useNavigate
   const { toast } = useToast();
   const { userId: runnerId, getToken } = useAuth(); // Use Clerk's useAuth
   const [orders, setOrders] = useState<BackendOrder[]>([]);
@@ -95,7 +95,8 @@ export function AvailableOrdersPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ orderId: orderId, runner_id: runnerId })
+        // Corrected key name from orderId to order_id to match backend expectation
+        body: JSON.stringify({ order_id: orderId, runner_id: runnerId })
       });
 
       const result = await response.json();
@@ -112,8 +113,10 @@ export function AvailableOrdersPage() {
       // Remove the accepted order from the local state
       setOrders(prevOrders => prevOrders.filter(o => o.orderId !== orderId));
 
-      // Optionally navigate to active orders page
-      // navigate('/runner/active-orders');
+      // Wait 2 seconds then navigate to active orders page
+      setTimeout(() => {
+        navigate('/runner/active-orders');
+      }, 2000); // 2000 milliseconds = 2 seconds
 
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to accept order. Please try again.';
