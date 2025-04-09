@@ -1,356 +1,139 @@
-# CampusG - Campus Food Delivery Application
+# CampusG - Food Delivery Platform
 
-CampusG is a microservices-based food delivery application designed for campus environments. It enables customers to place food orders and have them delivered by runners.
+## 1. Overview
 
-## System Architecture
+CampusG is a microservices-based application simulating a campus food delivery service. It connects customers placing orders with runners who deliver them. The system utilizes saga patterns (both Kafka-based and Temporal-based) to manage complex distributed transactions like order creation, acceptance, and completion/payment.
 
-The application follows a microservices architecture with the following components:
+## 2. Architecture & Flow
 
-### Core Services
+The system follows a microservices architecture pattern. Key components and interactions include:
 
-- **User Service**: Manages user accounts, authentication, and user data (TypeScript/Node.js)
-- **Order Service**: Handles basic CRUD operations for orders (Python/Flask)
-- **Payment Service**: Processes payments via Stripe integration (TypeScript/Node.js)
-- **Escrow Service**: Manages fund holding and release (TypeScript/Node.js)
-- **Scheduler Service**: Handles time-based events and order timeouts (TypeScript/Node.js)
-- **Notification Service**: Sends notifications to users about order status changes (TypeScript/Node.js)
-- **Timer Service**: Manages timing-related operations (TypeScript/Node.js)
+*   **Frontend (React/Vite):** The user interface for customers and runners. Interacts directly with various backend services via HTTP API calls.
+*   **User Service (Flask):** Handles user authentication (via Clerk), profile management, and stores Stripe customer/connect account details.
+*   **Order Service (Flask):** Manages the lifecycle of orders (creation, status updates, assignment).
+*   **Payment Service (Flask):** Integrates with Stripe for handling payment intents, refunds, and payouts to runners.
+*   **Notification Service (Flask):** Primarily acts as a Kafka consumer, logging events for observability and monitoring with Grafana.
+*   **Create Order Saga (Flask/Kafka):** Orchestrates the complex process of creating a new order.
+    *   Triggered by the Frontend.
+    *   Uses Kafka commands/events to coordinate actions between Order Service (create order), User Service (get payment info), Payment Service (authorize payment), and Order Service again (update status).
+    *   Communicates with the external Timer Service (Outsystems) via HTTP to start an order timer.
+    *   Manages its state in a database and handles failures/compensation via Kafka events.
+*   **Accept Order Saga (Temporal):** Orchestrates a runner accepting an order.
+    *   Triggered by the Frontend (likely via an API gateway or directly).
+    *   Uses Temporal activities to make HTTP calls to:
+        *   Order Service: Verify and assign the runner to the order.
+        *   Timer Service (Outsystems): Notify that the order is accepted (e.g., stop/update a timer).
+    *   Handles compensation (e.g., reverting order status) if activities fail.
+*   **Complete Order Saga (Temporal):** Orchestrates the final steps after delivery.
+    *   Triggered by the Frontend (runner marks order as delivered).
+    *   Uses Temporal activities to make HTTP calls to:
+        *   Order Service: Update status to 'Delivered', then 'Completed'.
+        *   User Service: Get the runner's Stripe Connect ID.
+        *   Payment Service: Get the payment ID for the order.
+        *   Payment Service: Release funds (payout) to the runner's Stripe account.
+    *   Handles compensation (e.g., reverting payment release/order status) if activities fail.
+*   **Kafka:** Acts as the central message bus for the Create Order Saga and event logging by the Notification Service.
+*   **Temporal:** Provides reliable execution and state management for the Accept Order and Complete Order sagas.
+*   **External Services:**
+    *   **Clerk:** Handles user authentication.
+    *   **Stripe:** Processes payments and payouts.
+    *   **Timer Service (Outsystems):** Manages timers related to order acceptance/delivery deadlines (details of interaction might vary).
+*   **Databases (PostgreSQL):** Used by individual services for data persistence.
 
-### Saga Orchestrator Services
+## 3. Services Deep Dive
 
-The application implements a decoupled saga orchestration pattern with dedicated microservices:
+*   **`frontend`**: React, Vite, TypeScript, TailwindCSS. Handles UI for customers and runners.
+*   **`services/user-service`**: Manages user profiles, Clerk authentication integration, Stripe customer and Connect account details.
+*   **`services/order_service`**: Manages order creation, status updates (Pending, Created, Accepted, Delivered, Completed, Cancelled), and assignment to runners.
+*   **`services/payment-service`**: Integrates with Stripe for payment intents, refunds, and payouts to runner Connect accounts.
+*   **`services/notification-service`**: Logs Kafka events for system observability. Has Grafana for monitoring as well.
+*   **`services/create-order-saga-orchestrator`**: Flask app orchestrating the multi-step order creation process via Kafka commands and events. Manages saga state in its own DB table. Interacts with Timer Service via HTTP.
+*   **`services/accept-order-saga-orchestrator`**: Temporal worker/workflow coordinating runner acceptance, updating Order Service and notifying Timer Service via HTTP activities.
+*   **`services/complete-order-saga-orchestrator`**: Temporal worker/workflow coordinating order completion, updating Order Service, fetching User/Payment info, and triggering payouts via HTTP activities.
+*   **`kafka`**: Contains Kafka topic configuration.
+*   **`temporal`**: Contains Temporal configuration.
+*   **`observability`**: Configuration for Loki, Promtail, Grafana.
 
-- **Create Order Saga Orchestrator**: Manages the entire order creation workflow, including payment authorization and escrow placement (Python/Flask)
-- **Accept Order Saga Orchestrator**: Manages the runner assignment workflow (Python/Flask)
-- **Complete Order Saga Orchestrator**: Manages the order delivery and payment release workflow (Python/Flask)
+## 4. Key Workflows (Sagas)
 
-Each Saga Orchestrator is a standalone composite microservice that:
-- Maintains its own state in a dedicated database
-- Coordinates multiple service calls to complete a business transaction
-- Handles compensation (rollback) logic when any step fails
-- Exposes APIs for initiating or querying saga processes
+*   **Create Order:** Customer places order -> Saga coordinates Order creation -> User payment info retrieval -> Payment authorization (Stripe) -> Order status update -> Timer start (Outsystems). Handles failures with compensation (e.g., cancelling order if payment fails).
+*   **Accept Order:** Runner accepts order -> Saga coordinates Order status update (assign runner) -> Timer notification (Outsystems). Handles failures with compensation (e.g., reverting order status).
+*   **Complete Order:** Runner marks order delivered -> Saga coordinates Order status update -> Runner payment info retrieval -> Payment ID retrieval -> Fund release (Stripe payout) -> Final Order status update. Handles failures with compensation (e.g., reverting payout/status).
 
-### Communication Patterns
-
-Services communicate through:
-- Direct HTTP API calls for synchronous operations
-- Kafka events for asynchronous notifications
-
-## Getting Started
-
-### Prerequisites
-
-- Docker and Docker Compose
-- Node.js (v16+) and npm (for TypeScript services and frontend)
-- Python 3.11+ and pip (for Order Service)
-- PostgreSQL (if running services locally)
-- Kafka (if running services locally)
-
-### Docker Compose Setup Instructions
-
-1. Clone the repository:
-   ```
-   git clone https://github.com/your-username/campusG.git
-   cd campusG
-   ```
-
-2. Set up environment variables:
-   ```
-   cp .env.example .env
-   ```
-   Edit the `.env` file to include your Stripe API keys and other configuration.
-
-3. Start all services using Docker Compose (recommended):
-   ```
-   docker-compose up -d
-   ```
-   
-   Or start specific services:
-   ```
-   docker-compose up -d frontend user-service payment-service
-   ```
-
-4. Verify containers are running and initialize the database for each service (required first time setup):
-   ```
-   # Check running containers
-   docker ps
-   ```
-
-   If the services are running, initialize their databases:
-   ```
-   # For user-service
-   docker exec -it campusg-user-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   ```
-
-   If a container isn't running, start it first, then initialize:
-   ```
-   # Start a specific service if it's not running
-   docker-compose up -d user-service
-   
-   #If you made a new enpoint and its not working e.g. in user-service
-   docker-compose build user-service && docker-compose up -d user-service
-
-   # Then initialize its database
-   docker exec -it campusg-user-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   ```
-
-   Repeat the same process for other services:
-   ```
-   # For order_service
-   docker-compose up -d order-service
-   docker exec -it campusg-order-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-
-   # For payment-service
-   docker-compose up -d payment-service
-   docker exec -it campusg-payment-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   
-   # For escrow-service
-   docker-compose up -d escrow-service
-   docker exec -it campusg-escrow-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   
-   # For notification-service
-   docker-compose up -d notification-service
-   docker exec -it campusg-notification-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   
-   # For timer-service
-   docker-compose up -d timer-service
-   docker exec -it campusg-timer-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   ```
-
-5. Access the frontend at `http://localhost:3000`
-
-### Common Issues and Fixes
-
-1. **Flask Werkzeug Compatibility Issues**: 
-   - If you see errors with `url_quote` or other Werkzeug-related errors, ensure that each service's requirements.txt includes:
-   ```
-   Werkzeug==2.2.3
-   ```
-   - The Dockerfiles for each service have been updated to explicitly install this version
-   - To force rebuilding all services with the fixed Werkzeug version, use:
-   ```
-   docker-compose build --no-cache
-   docker-compose up -d
-   ```
-
-2. **Database Tables Don't Exist Error**:
-   - If you get "relation does not exist" errors, you need to initialize and run database migrations for that service
-   - First check if the container is running, and start it if needed:
-   ```
-   # Check status
-   docker ps
-   
-   # Start if needed
-   docker-compose up -d <service-name>
-   ```
-   - Then run migrations inside the container:
-   ```
-   docker exec -it campusg-<service-name>-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   ```
-   - For example, for the user-service:
-   ```
-   docker exec -it campusg-user-service-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   ```
-
-3. **Datetime UTC Issues**:
-   - If you encounter datetime errors related to `datetime.UTC`, ensure you're using the correct import:
-   ```python
-   from datetime import datetime, timezone
-   # Use timezone.utc instead of datetime.UTC
-   created_at = db.Column(db.DateTime, nullable=False, default=datetime.now(timezone.utc))
-   ```
-   - All services' models files have been updated to use the correct timezone import
-
-4. **Container Exiting Unexpectedly**:
-   - If containers are starting but exiting right away, check the logs:
-   ```
-   docker logs campusg-<service-name>-1
-   ```
-   - Look for error messages that indicate dependency or code issues
-   - Common issues include Flask compatibility errors or database connection problems
-
-5. **Flask Migration Errors**:
-   - If you see "Can't locate revision identified by 'XXXX'" when running migrations, the migrations directory might be in an inconsistent state
-   - To fix this, you can remove the migrations directory in the container and reinitialize:
-   ```
-   # First, access the container
-   docker exec -it campusg-<service-name>-1 bash
-   
-   # Inside the container, remove the migrations directory
-   cd /app
-   rm -rf migrations
-   
-   # Then exit the container
-   exit
-   
-   # Now run the migration commands again
-   docker exec -it campusg-<service-name>-1 bash -c "cd /app && flask db init && flask db migrate -m 'initial migration' && flask db upgrade"
-   ```
-   - Alternatively, you can rebuild and start the containers from scratch:
-   ```
-   docker-compose down -v  # -v removes volumes too, which means the database will be wiped
-   docker-compose build --no-cache
-   docker-compose up -d
-   ```
-   - Then run the migration commands for each service
-
-## Deploying with Kubernetes
+## 5. Getting Started
 
 ### Prerequisites
 
-- Docker Desktop with Kubernetes enabled
-- kubectl command-line tool (comes with Docker Desktop)
+*   Docker & Docker Compose
+*   Git
+*   Access to external service credentials (Stripe, Clerk, Outsystems Timer API if needed)
 
-### Enabling Kubernetes in Docker Desktop
+### Environment Setup
 
-1. Open Docker Desktop
-2. Go to Settings/Preferences
-3. Select "Kubernetes" in the left sidebar
-4. Check "Enable Kubernetes"
-5. Click "Apply & Restart"
-6. Wait for Kubernetes to start (may take a few minutes)
+1.  Clone the repository.
+2.  Copy `.env.example` to `.env`.
+3.  Fill in the required environment variables in `.env`:
+    *   Stripe API Keys (Secret and Public)
+    *   Clerk Backend API Key, Frontend API Key, JWT Key
+    *   Database connection details (if not using defaults)
+    *   `TIMER_SERVICE_URL` (Points to the Outsystems API endpoint for timer operations)
+    *   `ORDER_SERVICE_URL`, `USER_SERVICE_URL`, `PAYMENT_SERVICE_URL` (usually default to Docker service names like `http://order-service:3002`)
+    *   Any other necessary configuration.
 
-### Deploying CampusG to Kubernetes
+### Building & Running
 
-1. Build the Docker images:
-   ```
-   cd kubernetes/setup
-   ./build-images.sh
-   ```
-
-2. Deploy the application:
-   ```
-   kubectl apply -f kubernetes/infrastructure/namespace.yaml
-   kubectl apply -f kubernetes/infrastructure/postgres/
-   kubectl apply -f kubernetes/infrastructure/kafka/
-   kubectl apply -f kubernetes/services/
-   kubectl apply -f kubernetes/frontend/
-   ```
-   
-   Or use the setup script:
-   ```
-   cd kubernetes/setup
-   ./minikube-setup.sh
-   ```
-
-3. Add entry to hosts file for local development:
-   - Windows: Edit `C:\Windows\System32\drivers\etc\hosts`
-   - macOS/Linux: Edit `/etc/hosts`
-   
-   Add: `127.0.0.1 campusg.local`
-
-4. Access the application at http://campusg.local
-
-### Checking Deployment Status
-
-```
-# View all resources in the campusg namespace
-kubectl get all -n campusg
-
-# Check pod status
-kubectl get pods -n campusg
-
-# View logs for a specific pod
-kubectl logs <pod-name> -n campusg -f
+```bash
+docker-compose up --build -d
 ```
 
-### Stopping the Kubernetes Deployment
+*   This command builds the images (if necessary) and starts all services defined in `docker-compose.yml` in detached mode.
+*   Wait for all services, Kafka, Temporal, and databases to initialize. Check logs using `docker-compose logs -f [service_name]`.
+
+### Accessing Services
+
+*   **Frontend:** `http://localhost:5173` (or as configured)
+*   **Temporal UI:** `http://localhost:8088` (or as configured)
+*   **Grafana (Observability):** `http://localhost:3000` (or as configured)
+
+## 6. Running Tests
+
+*   Integration tests for sagas might exist (e.g., `services/create-order-saga-orchestrator/saga_integration_test.py`). Refer to specific service directories or documentation (`Docs/`) for details.
+*   Execute tests within the respective service containers if required.
+
+## 7. Observability
+
+*   Logs are aggregated by Promtail and sent to Loki.
+*   Grafana is configured with Loki as a data source for log visualization and querying. Access Grafana via `http://localhost:3000`.
+
+## 8. Project Structure
 
 ```
-kubectl delete namespace campusg
+├── Changelogs/       # Manual changelog files
+├── Docs/             # Project documentation and guides
+├── frontend/         # React/Vite frontend application
+├── kafka/            # Kafka configuration (e.g., topics)
+├── kubernetes/       # (Optional) Kubernetes deployment files
+├── observability/    # Grafana, Loki, Promtail configurations
+├── services/         # Backend microservices and saga orchestrators
+│   ├── accept-order-saga-orchestrator/
+│   ├── complete-order-saga-orchestrator/
+│   ├── create-order-saga-orchestrator/
+│   ├── notification-service/
+│   ├── order_service/
+│   ├── payment-service/
+│   ├── user-service/
+│   └── ...
+├── temporal/         # Temporal server configuration
+├── .env.example      # Example environment variables
+├── .gitignore
+├── docker-compose.yml # Main Docker Compose file for local development
+└── README.md         # This file
 ```
 
-## Running Services Individually
+## 9. API Documentation
 
-### Running TypeScript Services Locally (user-service, payment-service, etc.)
+*(Optional: Link to specific service READMEs or Swagger/OpenAPI documentation if available)*
 
-1. Install dependencies:
-   ```
-   cd services/user-service
-   npm install
-   ```
+## 10. Contributing
 
-2. Set up environment variables or use defaults from service config
-
-3. Start the service:
-   ```
-   npm run dev
-   ```
-
-### Running Order Service Locally (Python/Flask)
-
-1. Install dependencies:
-   ```
-   cd services/order_service
-   pip install -r requirements.txt
-   ```
-
-2. Set environment variables or use defaults from `app/config/config.py`
-
-3. Run the service:
-   ```
-   python run.py
-   ```
-
-### Running the Frontend Locally
-
-1. Install dependencies:
-   ```
-   cd frontend
-   npm install
-   ```
-
-2. Start the development server:
-   ```
-   npm run dev
-   ```
-
-3. Access the frontend at `http://localhost:3000`
-
-## Tech Stack
-
-### Backend
-- **TypeScript Services**: Node.js, TypeScript, Express, PostgreSQL, Prisma ORM
-- **Order Service**: Python 3.11, Flask, SQLAlchemy, PostgreSQL
-- **Message Broker**: Kafka
-- **Authentication**: Clerk
-- **Payment Processing**: Stripe
-
-### Frontend
-- **Framework**: Next.js, React
-- **Styling**: Tailwind CSS, shadcn components
-- **Language**: TypeScript
-
-### Infrastructure
-- **Containerization**: Docker & Docker Compose
-- **Orchestration**: Kubernetes
-- **Database**: PostgreSQL
-
-## Directory Structure
-
-```
-campusG/
-├── services/                  # Microservices directory
-│   ├── user-service/          # User management service (TypeScript)
-│   ├── order_service/         # Order management service (Python/Flask)
-│   ├── payment-service/       # Payment processing service (TypeScript)
-│   ├── escrow-service/        # Escrow service (TypeScript)
-│   ├── scheduler-service/     # Scheduler service (TypeScript)
-│   └── notification-service/  # Notification service (TypeScript)
-├── frontend/                  # Next.js frontend
-├── kafka/                     # Kafka configuration
-├── kubernetes/                # Kubernetes configuration files
-│   ├── infrastructure/        # Infrastructure resources (Postgres, Kafka)
-│   ├── services/              # Service deployments
-│   ├── frontend/              # Frontend deployment
-│   ├── setup/                 # Setup and deployment scripts
-│   └── KUBERNETES.md          # Detailed Kubernetes documentation
-└── scripts/                   # Setup and utility scripts
-```
-
-## Development Notes
-
-- The order service uses Flask and is found in `services/order_service/` (note the underscore)
-- Other services use TypeScript and follow a similar structure
-- Service-specific documentation can be found in the README.md file within each service directory
-- Frontend uses Next.js App Router and includes both customer and runner interfaces
+*(Optional: Add guidelines for contributing to the project)*
