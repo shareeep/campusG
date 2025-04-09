@@ -38,8 +38,7 @@ class HttpClient:
             base_urls (dict, optional): Dictionary of service URLs. Defaults to None.
         """
         self.base_urls = base_urls or {
-            'timer': TIMER_SERVICE_URL,
-            'order': os.getenv('ORDER_SERVICE_URL', 'http://localhost:3002')
+            'timer': TIMER_SERVICE_URL
         }
         logger.info(f"Initialized HttpClient with base URLs: {self.base_urls}")
     
@@ -147,49 +146,6 @@ class HttpClient:
             logger.error(f"Unexpected error polling timer cancellation: {str(e)}", exc_info=True)
             return False, {'error': str(e)}
 
-    def get_order(self, order_id):
-        """
-        Get order details from the Order Service
-        
-        Args:
-            order_id (str): The ID of the order to fetch
-            
-        Returns:
-            tuple: (success, order_data) - order_data is the order details or error dict
-        """
-        # Ensure order_id is a string
-        if isinstance(order_id, uuid.UUID):
-            order_id = str(order_id)
-            
-        order_url = f"{self.base_urls['order']}/getOrderDetails?orderId={order_id}"
-        logger.info(f"Fetching order details from {order_url}")
-        
-        try:
-            response = requests.get(
-                order_url,
-                headers={"Accept": "application/json"},
-                timeout=HTTP_TIMEOUT
-            )
-            
-            if 200 <= response.status_code < 300:
-                try:
-                    response_data = response.json()
-                    logger.info(f"Successfully fetched order {order_id}, status: {response_data.get('orderStatus')}")
-                    return True, response_data
-                except ValueError:
-                    logger.error(f"Order service returned non-JSON response: {response.text}")
-                    return False, {'error': 'Invalid JSON response from order service'}
-            else:
-                logger.error(f"Order service returned error status: {response.status_code}, body: {response.text}")
-                return False, {'error': f"HTTP {response.status_code}: {response.text}"}
-                
-        except RequestException as e:
-            logger.error(f"HTTP error fetching order {order_id}: {str(e)}")
-            return False, {'error': str(e)}
-        except Exception as e:
-            logger.error(f"Unexpected error fetching order {order_id}: {str(e)}", exc_info=True)
-            return False, {'error': str(e)}
-            
     def cancel_timer(self, order_id):
         """
         Request cancellation of a timer via HTTP to the Timer Service.

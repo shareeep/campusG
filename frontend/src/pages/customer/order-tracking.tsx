@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Package, Truck, CheckCircle2, Loader2, User, Ban } from 'lucide-react'; // Added Ban icon for cancel button
+import { Package, Truck, CheckCircle2, Loader2, User } from 'lucide-react'; // Removed Clock, MessageSquare
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { getOrder, confirmDelivery } from '@/lib/api'; // getOrder signature changed
