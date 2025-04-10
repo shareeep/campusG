@@ -52,7 +52,6 @@ The system follows a microservices architecture pattern. Key components and inte
 *   **`services/complete-order-saga-orchestrator`**: Temporal worker/workflow coordinating order completion, updating Order Service, fetching User/Payment info, and triggering payouts via HTTP activities.
 *   **`kafka`**: Contains Kafka topic configuration.
 *   **`temporal`**: Contains Temporal configuration.
-*   **`observability`**: Configuration for Loki, Promtail, Grafana.
 
 ## 4. Key Workflows (Sagas)
 
@@ -71,14 +70,10 @@ The system follows a microservices architecture pattern. Key components and inte
 ### Environment Setup
 
 1.  Clone the repository.
-2.  Copy `.env.example` to `.env`.
-3.  Fill in the required environment variables in `.env`:
-    *   Stripe API Keys (Secret and Public)
-    *   Clerk Backend API Key, Frontend API Key, JWT Key
-    *   Database connection details (if not using defaults)
-    *   `TIMER_SERVICE_URL` (Points to the Outsystems API endpoint for timer operations)
-    *   `ORDER_SERVICE_URL`, `USER_SERVICE_URL`, `PAYMENT_SERVICE_URL` (usually default to Docker service names like `http://order-service:3002`)
-    *   Any other necessary configuration.
+2.  Reference the `.env.example` to create it's matching `.env`.
+3.  There is an additional `.env.local.example` within the root/frontend/.env.local
+4.  Fill in the required environment variables in both env files.
+
 
 ### Building & Running
 
@@ -91,29 +86,19 @@ docker-compose up --build -d
 
 ### Accessing Services
 
-*   **Frontend:** `http://localhost:5173` (or as configured)
-*   **Temporal UI:** `http://localhost:8088` (or as configured)
-*   **Grafana (Observability):** `http://localhost:3000` (or as configured)
-
-## 6. Running Tests
-
-*   Integration tests for sagas might exist (e.g., `services/create-order-saga-orchestrator/saga_integration_test.py`). Refer to specific service directories or documentation (`Docs/`) for details.
-*   Execute tests within the respective service containers if required.
-
-## 7. Observability
-
-*   Logs are aggregated by Promtail and sent to Loki.
-*   Grafana is configured with Loki as a data source for log visualization and querying. Access Grafana via `http://localhost:3000`.
+*   **Frontend:** `http://localhost:5173` 
+*   **Temporal UI:** `http://localhost:8080`
+*   **Grafana (Observability):** `http://localhost:3000` 
 
 ## 8. Project Structure
 
 ```
+├── api-specs/        # OpenAPI specifications for services
 ├── Changelogs/       # Manual changelog files
 ├── Docs/             # Project documentation and guides
 ├── frontend/         # React/Vite frontend application
+├── grafana/          # Grafana provisioning configuration
 ├── kafka/            # Kafka configuration (e.g., topics)
-├── kubernetes/       # (Optional) Kubernetes deployment files
-├── observability/    # Grafana, Loki, Promtail configurations
 ├── services/         # Backend microservices and saga orchestrators
 │   ├── accept-order-saga-orchestrator/
 │   ├── complete-order-saga-orchestrator/
@@ -121,8 +106,7 @@ docker-compose up --build -d
 │   ├── notification-service/
 │   ├── order_service/
 │   ├── payment-service/
-│   ├── user-service/
-│   └── ...
+│   └── user-service/
 ├── temporal/         # Temporal server configuration
 ├── .env.example      # Example environment variables
 ├── .gitignore
@@ -131,9 +115,4 @@ docker-compose up --build -d
 ```
 
 ## 9. API Documentation
-
-*(Optional: Link to specific service READMEs or Swagger/OpenAPI documentation if available)*
-
-## 10. Contributing
-
-*(Optional: Add guidelines for contributing to the project)*
+Swagger is integrated into all services, as well as in the api-specs folder.
