@@ -794,9 +794,10 @@ def clear_runner():
         # Store the current runner_id for event logging
         runner_id = order.runner_id
 
-        # Clear runner_id and revert status to CREATED
+        # Clear runner_id, revert status to CREATED, and clear accepted timestamp
         order.runner_id = None
         order.order_status = OrderStatus.CREATED
+        order.accepted_at = None # Clear the acceptance timestamp
         db.session.commit()
 
         # Publish event using the correct method

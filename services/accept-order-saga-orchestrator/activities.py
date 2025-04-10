@@ -8,7 +8,6 @@ async def verify_and_accept_order(order_id: str, runner_id: str) -> bool:
     order_service_url = os.getenv('ORDER_SERVICE_URL', 'http://localhost:3002')
     try:
         print(f"Order {order_id} successfully verified and accepted.")
-        print(f"what is going on")
         url = f"{order_service_url}/verifyAndAcceptOrder"
         response = requests.post(url, json={
         "orderId": f"{order_id}",
@@ -17,12 +16,11 @@ async def verify_and_accept_order(order_id: str, runner_id: str) -> bool:
         response.raise_for_status()
 
         return True 
-    #false for compensation testing
     except Exception as e:
         print(f"Failed to verify and accept order {order_id}: {e}")
         return False
 
-#compensation for order status to return to CREATED
+#Compensation for order status to return to CREATED, remove Runner & remove timestamp
 @activity.defn
 async def revert_order_status(order_id: str) -> bool:
     order_service_url = os.getenv('ORDER_SERVICE_URL', 'http://localhost:3002')
@@ -41,14 +39,14 @@ async def revert_order_status(order_id: str) -> bool:
 async def notify_timer_service(order_id: str, runner_id: str) -> bool: # Added runner_id parameter
     timer_service_url = os.getenv('TIMER_SERVICE_URL', 'https://personal-7ndmvxwm.outsystemscloud.com/Timer_CS/rest/TimersAPI/StopTimer') # Read from env var
     try:
-        url = timer_service_url # Use the variable
-        response = requests.post(url, json={ # Uncommented and corrected JSON keys
-            "OrderId": order_id,
-            "RunnerId": runner_id
-        })
-        response.raise_for_status() # Uncommented
+        # url = timer_service_url # Use the variable
+        # response = requests.post(url, json={ # Uncommented and corrected JSON keys
+        #     "OrderId": order_id,
+        #     "RunnerId": runner_id
+        # })
+        # response.raise_for_status() # Uncommented
         print(f"Timer Service notified successfully for order {order_id}.") # Updated print message
-        return True
+        return False
     except Exception as e:
         print(f"Failed to notify Timer Service for order {order_id}: {e}")
         return False

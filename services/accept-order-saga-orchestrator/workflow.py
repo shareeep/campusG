@@ -59,4 +59,5 @@ class AcceptOrderWorkflow:
         except Exception as e:
             print(f"Workflow failed, triggering compensation: {e}")
             await compensation.compensate()
+            return False
             # raise e
